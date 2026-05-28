@@ -1,0 +1,25 @@
+patterns:
+  - id: mgn_linear_rail
+    aliases: [hiwin_rail, linear_guide_rail]
+    summary: |
+      Hardened steel rail with recirculating ball carriage. Sizes
+      MGN7, MGN9, MGN12, MGN15 (number = rail width in mm).
+      Highest precision and load capacity per cost in this category.
+    key_parameters:
+      mgn7_carriage_LxWxH: 22x17x8
+      mgn9_carriage_LxWxH: 30x20x10
+      mgn12_carriage_LxWxH: 40x27x13
+      mgn15_carriage_LxWxH: 50x32x16
+    when_to_use: DEFAULT for precision linear motion. 3D printers, CNC.
+
+  - id: smooth_rod_lm_bushing
+    summary: |
+      Hardened steel rod (8mm, 10mm, 12mm OD) with LM-series ball
+      bushings. Cheaper than rails but lower precision and stiffness.
+    when_to_use: Cost-sensitive builds, Prusa-i3 style.
+
+  - id: v_wheel_extrusion_groove
+    summary: |
+      Wheels with V-groove riding directly in the V-slot of the
+      extrusion. No separate rail. Used in OpenBuilds designs.
+    when_to_use: Quick assembly, low cost. Less precise than rails.

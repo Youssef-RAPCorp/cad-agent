@@ -1,0 +1,21 @@
+patterns:
+  - id: corexy_gantry_bridge
+    summary: |
+      Single 2020 extrusion (or aluminum extrusion bridge) spanning
+      between two Y-rail carriages. X rail mounted on top. Toolhead
+      slides on X rail.
+    geometry_constraints:
+      gantry_must_be_perfectly_perpendicular_to_y_rails: true
+      racking_prevention_via_belt_tension: true
+
+  - id: prusa_x_carriage
+    summary: |
+      X carriage rides on smooth rod + LM8UU bushings. Direct or
+      bowden hot-end mount. Z movement via lead screws on either side.
+
+  - id: cantilever_x_arm
+    summary: |
+      X axis supported on ONE side only (other end free). Used in
+      compact printers like Tronxy series.
+    when_to_use: Space-constrained designs.
+    not_suitable_for: Heavy direct-drive toolheads (sag too much).

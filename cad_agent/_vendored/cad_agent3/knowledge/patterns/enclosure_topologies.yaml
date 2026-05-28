@@ -1,0 +1,30 @@
+patterns:
+  - id: snap_fit_enclosure
+    summary: |
+      Two-part enclosure with cantilever snaps on the lid that flex
+      past undercuts on the base. Common in consumer electronics.
+    geometry_constraints:
+      snap_arm_length_to_thickness_ratio: 5-10
+      undercut_depth_mm: 0.5-1.5
+      snap_material_must_be_flexible: true   # ABS, polypropylene, not rigid PLA
+    when_to_use: Tool-less reclosable enclosures. Not for waterproof.
+
+  - id: tongue_and_groove
+    summary: |
+      Mating halves with tongues on one half slotting into grooves
+      on the other. Provides alignment and increases joint surface.
+    when_to_use: Wood/MDF enclosures, or where you need self-aligning halves.
+
+  - id: screw_post_enclosure
+    summary: |
+      Two-part enclosure joined by 4+ screws through bosses. Most
+      reliable, most permanent. The default for "make sure it stays closed."
+    when_to_use: DEFAULT for non-reclosable robust enclosures.
+
+  - id: screw_boss_design
+    summary: |
+      Cylindrical boss with center hole for self-tapping or thread-forming
+      screw. Wall thickness around hole = ~0.7-0.9 × screw nominal diameter.
+    geometry_constraints:
+      boss_OD_to_screw_diameter_ratio: 2.5
+      boss_wall_min_mm: 1.5

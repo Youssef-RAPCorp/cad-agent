@@ -1,0 +1,21 @@
+patterns:
+  - id: bondtech_dual_drive
+    summary: |
+      Dual-gear extruder (both gears driven). Best grip on filament,
+      most reliable. Used in high-end builds (Voron, Prusa MK4).
+    when_to_use: When you need maximum filament push force. Worth the cost.
+
+  - id: bmg_clone
+    summary: |
+      Bondtech-style dual-drive at 1/3 the price. Slightly worse QC
+      but functionally equivalent for hobby use.
+
+  - id: direct_drive_extruder
+    summary: |
+      Extruder mounted directly on the toolhead. Best for flexibles
+      and retraction performance.
+    when_to_use: Printing TPU/flexibles, or short retraction needs.
+
+  - id: bowden_extruder
+    summary: Extruder on the frame, filament travels through PTFE tube.
+    when_to_use: CoreXY/delta where toolhead mass matters.

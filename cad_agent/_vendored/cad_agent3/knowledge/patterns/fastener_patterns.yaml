@@ -1,0 +1,33 @@
+patterns:
+  - id: clearance_through_hole
+    summary: |
+      Hole that lets a screw pass through freely. Diameter = nominal
+      screw diameter + ISO 273 clearance.
+    geometry_constraints:
+      M3_clearance_mm: 3.4
+      M4_clearance_mm: 4.5
+      M5_clearance_mm: 5.5
+      M6_clearance_mm: 6.6
+      M8_clearance_mm: 9.0
+
+  - id: tapped_thread_hole
+    summary: |
+      Hole sized for tapping (cutting threads). Diameter = nominal -
+      pitch (rough rule).
+    geometry_constraints:
+      M3_tap_drill_mm: 2.5
+      M4_tap_drill_mm: 3.3
+      M5_tap_drill_mm: 4.2
+      M6_tap_drill_mm: 5.0
+
+  - id: countersink_hole
+    summary: |
+      Tapered hole for flat-head screw. Cone angle 90° (metric) or 82°
+      (imperial). Cone diameter = head diameter + 0.5mm.
+    when_to_use: Where the screw head must be flush with the surface.
+
+  - id: counterbore_hole
+    summary: |
+      Cylindrical recess sized to hide a socket-head cap screw flush
+      or below the surface. Diameter = head diameter + 0.5mm clearance.
+    when_to_use: Socket-head screws on visible surfaces.

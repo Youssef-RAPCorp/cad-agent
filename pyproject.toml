@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cad-agent"
+version = "0.1.0"
+description = "LLM-powered CAD model generation from natural-language specs (build123d backend)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "RAPCorp"},
+]
+keywords = ["cad", "build123d", "llm", "generative-design", "gemini", "anthropic"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Manufacturing",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "build123d>=0.7.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=0.3.0"]
+anthropic = ["anthropic>=0.30.0"]
+preview = ["pillow>=10.0"]
+all = [
+    "google-genai>=0.3.0",
+    "anthropic>=0.30.0",
+    "pillow>=10.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Youssef-RAPCorp/cad-agent"
+Issues = "https://github.com/Youssef-RAPCorp/cad-agent/issues"
+
+[project.scripts]
+cad-agent = "cad_agent.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cad_agent*"]
+
+[tool.setuptools.package-data]
+"cad_agent._vendored.cad_agent3" = [
+    "configs/**/*.yaml",
+    "configs/**/*.yml",
+    "knowledge/**/*",
+    "reasoning/**/*.md",
+]

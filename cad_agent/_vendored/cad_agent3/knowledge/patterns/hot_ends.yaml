@@ -1,0 +1,23 @@
+patterns:
+  - id: e3d_v6_hotend
+    summary: |
+      Industry-standard direct-drive hot-end. Heatsink (cylindrical
+      finned, 22mm OD), heater block, nozzle, thermistor, heater
+      cartridge. Mounts via the heatsink groove.
+    key_parameters:
+      heatsink_OD_mm: 22
+      groove_mount_diameter_mm: 16
+      heater_block_size_mm: 20x16x8
+      typical_nozzle_thread: M6
+    when_to_use: DEFAULT direct-drive hot-end for hobby FDM.
+
+  - id: e3d_revo_quickchange
+    summary: Modern hot-end with screw-in nozzles (no wrench needed).
+    when_to_use: Frequent nozzle changes.
+
+  - id: bowden_hotend_setup
+    summary: |
+      Hot-end mounted on the toolhead, but the extruder motor lives
+      on the frame and pushes filament through a PTFE bowden tube.
+    when_to_use: Lighter toolhead = faster motion (CoreXY).
+                  Trade-off: worse retraction performance.

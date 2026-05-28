@@ -1,0 +1,11 @@
+name: bearing_608
+category: bearing
+description: 608ZZ deep-groove ball bearing (8mm bore, common 3D-printer/skate size)
+units: mm
+
+bore_diameter: 8.0           # inner diameter
+outer_diameter: 22.0
+width: 7.0
+chamfer: 0.3                 # corner break
+seal_type: ZZ                # metal-shielded; alternatives 2RS (rubber), open
+press_fit_clearance: 0.05    # housing bore should be OD - this for press fit

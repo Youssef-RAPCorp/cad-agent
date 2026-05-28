@@ -1,0 +1,54 @@
+patterns:
+  - id: nema_face_mount
+    aliases: [nema17_mount, square_face_mount, stepper_face_plate]
+    summary: |
+      Standard 4-bolt-corner mount for NEMA-frame stepper motors. The
+      motor's front face has 4 tapped holes in a square pattern, plus
+      a central pilot/spigot (raised circular boss) for centering.
+      Mating part has matching clearance holes + central bore.
+    use_cases:
+      - mounting any NEMA17/23/34 motor to a frame face
+      - 3D printers, CNC routers, robotics joints
+    key_parameters:
+      bolt_pattern: 4_corner_square
+      bolt_thread: motor_dependent  # M3 for NEMA17, M5 for NEMA23, M6 for NEMA34
+    geometry_constraints:
+      pilot_clearance_mm: 0.5   # mating bore is pilot_diameter + 0.5
+      bolt_clearance_per_iso273: true
+      mating_part_min_thickness_mm: 4   # to engage screw threads at safe depth
+    real_world_validation:
+      - reference: NEMA ICS 16 standard
+      - reference: thousands of commercial steppers use this exact pattern
+    when_to_use: |
+      DEFAULT choice for any stepper motor mount. Only deviate if you
+      have a specific reason (e.g. slot-mounting to T-slot extrusion,
+      or face-mount with offset for cable clearance).
+
+  - id: tslot_extrusion_motor_mount
+    summary: |
+      NEMA face mount on a 3-4mm plate with additional outer holes
+      that align with the slot of a T-slot extrusion. The plate spans
+      across the extrusion face and bolts to slot nuts.
+    use_cases:
+      - mounting steppers to 2020/3030/4040 frame extrusions
+      - V-core, Voron, RatRig, HevORT printer designs
+    geometry_constraints:
+      plate_min_thickness_mm: 3
+      tslot_bolt_pattern_must_match_slot_pitch: true
+    when_to_use: |
+      You have an aluminum-extrusion frame and need to mount a stepper.
+      Standard pattern across the maker community.
+
+  - id: motor_pulley_attachment
+    aliases: [gt2_pulley_grub_screw, drive_pulley]
+    summary: |
+      Pulley clamps to motor shaft via two grub screws (one on shaft
+      flat, one perpendicular for redundancy). Pulley bore = shaft
+      diameter + 0.05mm clearance.
+    use_cases:
+      - GT2 belt drive in 3D printers
+      - any stepper-to-belt power transmission
+    geometry_constraints:
+      pulley_bore_clearance_mm: 0.05
+      grub_screw_count: 2
+      pulley_must_clear_motor_face_by_mm: 2-3

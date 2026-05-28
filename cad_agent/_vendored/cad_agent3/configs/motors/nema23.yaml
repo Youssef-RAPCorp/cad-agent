@@ -1,0 +1,25 @@
+name: nema23
+category: motor
+description: NEMA 23 frame stepper motor
+units: mm
+
+face_size: 56.4
+length_typical: 56.0
+length_options: [41, 51, 56, 76, 100]
+
+shaft_diameter: 6.35       # 1/4" — common; some 8mm variants exist
+shaft_length: 21.0
+shaft_flat_offset: 0.6
+shaft_flat_length: 15.0
+
+bolt_circle_pattern: square
+bolt_spacing: 47.14
+bolt_thread: M5
+bolt_clearance_diameter: 5.5
+bolt_screw_depth_max: 6.0
+bolt_count: 4
+
+pilot_diameter: 38.1
+pilot_height: 1.6
+
+cable_exit: rear

@@ -1,0 +1,14 @@
+patterns:
+  - id: friction_tab_retention
+    summary: |
+      Folded paper tab inside a phone slot that grips the phone
+      back via friction. Self-aligning, no moving parts.
+
+  - id: elastic_band_retention
+    summary: |
+      Rubber band stretched around the phone and headset. Used in
+      FoloVR-style designs.
+    not_suitable_for: heavy phones (>200g).
+
+  - id: velcro_strip_retention
+    summary: Hook-and-loop strips. Standard in Google Cardboard v1.

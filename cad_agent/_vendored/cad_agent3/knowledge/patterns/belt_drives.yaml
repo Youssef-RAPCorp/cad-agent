@@ -1,0 +1,33 @@
+patterns:
+  - id: gt2_belt_drive
+    summary: |
+      2mm-pitch toothed belt with GT2 tooth profile. Standard in 3D
+      printing for X/Y axes. Belt widths 6mm or 9mm.
+    key_parameters:
+      pitch_mm: 2
+      typical_width_mm: 6
+      pulley_teeth_count: 16-20
+      idler_OD_mm: 16
+    geometry_constraints:
+      belt_min_bend_radius_mm: 6   # smaller causes premature wear
+      pulley_grub_screw_must_engage_shaft_flat: true
+
+  - id: gt3_belt_drive
+    summary: |
+      3mm-pitch GT3. Used for higher-torque applications. Less common
+      in hobby printers.
+
+  - id: open_belt_with_clamps
+    summary: |
+      Belt cut to length with both ends clamped to the moving carriage,
+      forming a closed loop via a stationary pulley. Used in CoreXY
+      and most open-loop systems.
+    geometry_constraints:
+      clamp_engagement_min_teeth: 8
+      tensioner_must_be_present: true
+
+  - id: closed_belt_loop
+    summary: |
+      Pre-vulcanized closed belt loop, no clamping needed. More
+      reliable but harder to install (must remove pulley to fit).
+    when_to_use: Production systems where belt failure cannot be tolerated.

@@ -1,0 +1,24 @@
+patterns:
+  - id: press_fit_bearing_pocket
+    summary: |
+      Cylindrical bore sized 0.03-0.05mm SMALLER than bearing OD for
+      press fit. Bearing inserted with light hammer or arbor press.
+    geometry_constraints:
+      interference_mm: 0.03-0.05
+      pocket_depth: bearing_width + 0.5
+    when_to_use: Permanent bearing mounting in metal or rigid plastic.
+
+  - id: slip_fit_bearing_pocket_with_retention
+    summary: |
+      Cylindrical bore = bearing OD + 0.05mm clearance, retained by
+      a snap ring, shoulder, or screw cover.
+    when_to_use: Plastic parts where press-fit risks cracking. Or where
+                  bearing must be replaceable.
+
+  - id: lm8uu_linear_bearing_mount
+    summary: |
+      LM8UU bearing (8mm bore, 15mm OD, 24mm long) press-fit into a
+      printed or machined housing. Common in 3D printer Z and Y axes.
+    geometry_constraints:
+      housing_bore_mm: 14.95   # press fit
+      housing_min_wall_mm: 2

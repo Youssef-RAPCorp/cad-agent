@@ -1,0 +1,14 @@
+patterns:
+  - id: meanwell_lrs_350_mount
+    summary: |
+      Standard 215×115×30mm power supply. Mounts via 4 M4 holes on
+      the underside (corners), or end-flanges on the long sides.
+    when_to_use: 24V/12V power for 3D printers, CNC.
+
+  - id: psu_end_cover
+    summary: |
+      Printed plastic cover over the AC-side terminals for safety.
+      Required for any user-accessible PSU mounting.
+    geometry_constraints:
+      must_cover_all_AC_terminals: true
+      ventilation_slots_required: true

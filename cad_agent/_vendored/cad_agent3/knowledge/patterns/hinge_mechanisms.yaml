@@ -1,0 +1,28 @@
+patterns:
+  - id: living_hinge_polymer
+    summary: |
+      Thin (0.3-0.6mm) section of flexible polymer (PP, PE) that
+      allows folding without separation. Used in consumer packaging,
+      injection-molded snap caps.
+    key_parameters:
+      polypropylene_thickness_mm: 0.3-0.6
+      polyethylene_thickness_mm: 0.4-0.8
+      cycle_lifetime: 100000+   # PP outperforms cardboard by 1000x
+    when_to_use: Injection-molded plastic hinges (caps, dispensers).
+
+  - id: living_hinge_cardboard
+    summary: See foldable_cardboard.yaml -> living_hinge_strip
+
+  - id: pin_hinge
+    summary: |
+      Two interlocking knuckles around a metal pin. Standard mechanical
+      hinge, requires hardware.
+    when_to_use: When repeatable precise rotation matters more than
+                  monolithic construction.
+
+  - id: flexure_hinge
+    summary: |
+      Thinned region of metal/plastic that flexes elastically.
+      Common in compliant mechanisms, optical mounts.
+    geometry_constraints:
+      flexure_min_radius_mm: 0.5   # avoid stress concentration

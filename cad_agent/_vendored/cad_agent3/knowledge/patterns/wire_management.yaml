@@ -1,0 +1,17 @@
+patterns:
+  - id: cable_chain_drag_chain
+    summary: |
+      Articulated plastic chain that carries cables on a moving axis,
+      preventing tangling. Sized by inside dimensions (e.g. 7×15, 10×20).
+    when_to_use: Any moving axis with multiple cables (gantry, bed).
+
+  - id: spiral_wrap
+    summary: Cheaper alternative to drag chain. Plastic spiral around cables.
+    when_to_use: Budget builds with few cables.
+
+  - id: cable_strain_relief
+    summary: |
+      Bushing or printed clamp at every point a cable enters/exits
+      a moving part. Prevents wire fatigue at the connection.
+    geometry_constraints:
+      strain_relief_required_at_every_moving_connection: true

@@ -1,0 +1,14 @@
+patterns:
+  - id: ipd_eye_separation
+    summary: |
+      Inter-pupillary distance. Average adult: 63mm. Range: 55-72mm.
+      Most cardboard VR fixes IPD at 63mm and accepts ~95% of users.
+    when_to_use: Always — this is the single most important number
+                  in VR optics.
+
+  - id: focal_length_to_screen_distance_match
+    summary: |
+      Lens focal length must equal lens-to-screen distance for sharp
+      image. Off by >5mm and the image is noticeably blurry.
+    geometry_constraints:
+      focal_length_mm == lens_to_screen_mm: required

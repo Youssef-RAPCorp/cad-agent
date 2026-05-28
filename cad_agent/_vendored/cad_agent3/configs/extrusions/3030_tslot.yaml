@@ -1,0 +1,18 @@
+name: 3030_tslot
+category: extrusion
+description: 30mm × 30mm aluminum T-slot extrusion, 8mm slot
+units: mm
+
+width: 30.0
+height: 30.0
+slot_count_per_side: 1
+slot_width: 8.0
+slot_depth: 8.5
+center_hole_diameter: 6.8
+
+wall_thickness: 2.0
+slot_nut_type: M6_T_nut
+end_screw: M6
+end_clearance_hole_in_mating_part: 6.6
+
+common_lengths: [500, 1000, 1500, 2000, 3000]

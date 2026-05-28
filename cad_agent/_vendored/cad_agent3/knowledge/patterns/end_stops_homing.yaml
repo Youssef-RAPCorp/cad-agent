@@ -1,0 +1,21 @@
+patterns:
+  - id: mechanical_microswitch_endstop
+    summary: |
+      Standard SS-5GL13 or compatible microswitch with lever. Detects
+      axis home position by physical contact.
+    geometry_constraints:
+      mounting_hole_pattern_2x_M2_at_19mm: true
+      activation_force_g: 50-200
+    when_to_use: DEFAULT for budget builds. Reliable, cheap, replaceable.
+
+  - id: optical_endstop
+    summary: |
+      Photo-interrupter detects axis position when a flag passes
+      through the optical gate. No physical contact, longer life.
+    when_to_use: Higher-end builds. More expensive than microswitch.
+
+  - id: bltouch_z_probe
+    summary: |
+      Servo-deployed pin sensor for automatic bed leveling on Z axis.
+      Replaces or supplements a Z endstop.
+    when_to_use: Any printer where you want auto-bed-leveling.

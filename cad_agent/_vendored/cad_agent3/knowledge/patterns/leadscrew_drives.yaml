@@ -1,0 +1,27 @@
+patterns:
+  - id: trapezoidal_leadscrew
+    aliases: [tr8x8, acme_screw]
+    summary: |
+      8mm trapezoidal lead screw with brass nut. Tr8x8 has 8mm pitch
+      (8mm travel per revolution). Used for Z axis in most printers.
+    key_parameters:
+      tr8x8_pitch_mm: 8
+      brass_nut_OD_mm: 16
+      typical_lengths_mm: [200, 300, 400, 500]
+    geometry_constraints:
+      screw_must_be_supported_at_both_ends_for_long_runs: true
+      anti_backlash_nut_recommended: true
+
+  - id: ball_screw
+    summary: |
+      Recirculating-ball lead screw. Much higher efficiency than
+      trapezoidal but expensive. Used in CNC mills.
+    when_to_use: Precision CNC, not typical 3D printers.
+
+  - id: dual_z_lead_screws
+    summary: |
+      Two parallel Z lead screws driven by a single motor (via belt)
+      or by two synchronized motors. Required for any X-gantry wider
+      than 250mm to avoid sag and binding.
+    when_to_use: Cartesian printers with X > 250mm, CoreXY with bed
+                  on Z (Voron 2.4 style).

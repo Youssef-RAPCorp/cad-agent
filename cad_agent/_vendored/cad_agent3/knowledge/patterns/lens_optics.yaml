@@ -1,0 +1,30 @@
+patterns:
+  - id: cardboard_vr_optics
+    summary: |
+      Two biconvex acrylic lenses (25-40mm dia, 40-50mm focal length)
+      positioned at IPD (~63mm) spacing, ~45mm from phone screen, with
+      eye relief 20-25mm.
+    key_parameters:
+      lens_diameter_mm: 25-40
+      focal_length_mm: 40-50
+      ipd_mm: 63   # average adult; range 55-72
+      lens_to_screen_mm: 45   # equal to focal length for sharp image
+      eye_relief_mm: 20-25
+    real_world_validation:
+      - product: Google Cardboard v2.2 (40mm focal)
+      - product: VR Customized Cardboard Fold (34mm lens)
+    geometry_constraints:
+      lens_hole_clearance_mm: 1-2   # over lens OD
+      lens_must_be_held_rigid: true   # any wobble doubles vision
+    failure_modes:
+      - mismatched_IPD_causes_blurry_or_double_vision
+      - lens_too_close_to_phone: image_blurry
+      - lens_too_far: image_distorted
+
+  - id: lens_carrier_separate_piece
+    summary: |
+      Rigid plate (acrylic, 2mm) holding both lenses, that snaps or
+      clips onto a flexible enclosure. Decouples optical rigidity from
+      enclosure flexibility.
+    when_to_use: Cardboard or fabric enclosures where the structure
+                  itself can't be made rigid enough for the lenses.

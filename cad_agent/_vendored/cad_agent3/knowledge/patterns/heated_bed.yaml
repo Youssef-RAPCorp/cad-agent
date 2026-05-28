@@ -1,0 +1,20 @@
+patterns:
+  - id: aluminum_bed_with_silicon_heater
+    summary: |
+      6-8mm aluminum tooling plate with silicone heating mat bonded
+      to the underside. Powered by 24V DC or AC mains.
+    key_parameters:
+      sizes_mm: [200x200, 220x220, 235x235, 300x300, 350x350]
+      thickness_mm: 6-8
+      heater_power_W_per_cm2: 0.4-0.6
+    geometry_constraints:
+      bed_must_have_4_corner_mount_points: true
+      heater_must_be_thermally_isolated_from_carriage: true
+
+  - id: pei_print_surface
+    summary: PEI sheet bonded to bed top. Excellent FDM adhesion. Standard now.
+    when_to_use: All modern FDM builds.
+
+  - id: glass_bed
+    summary: 3-4mm borosilicate glass on top of aluminum heater.
+    when_to_use: Older designs. Largely superseded by spring steel + PEI.

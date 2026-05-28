@@ -1,0 +1,26 @@
+patterns:
+  - id: tslot_corner_bracket
+    aliases: [angle_bracket, l_bracket]
+    summary: |
+      L-shaped bracket bolting two perpendicular T-slot extrusions
+      together via M5 (for 2020) or M6/M8 (for 3030/4040) bolts and
+      slot nuts. 3mm wall stamped steel or printed plastic.
+    use_cases:
+      - frame assembly for 3D printers, CNC routers
+      - any orthogonal-extrusion structure
+    key_parameters:
+      wall_thickness_mm: 3
+      hole_count_per_leg: 1-2
+    when_to_use: DEFAULT for any 90° T-slot joint.
+
+  - id: tslot_inside_corner_cube
+    summary: |
+      6-faced cube that fits INSIDE the T-slot extrusion ends, with
+      M5 holes for bolts threading through the slots. Hidden joint
+      (no protruding bracket).
+    when_to_use: Aesthetic builds where external brackets are unwanted.
+    not_suitable_for: heavy load (lower stiffness than external brackets)
+
+  - id: tslot_gusset
+    summary: Triangular reinforcement bolted across a 90° corner. Adds rigidity.
+    when_to_use: When the corner sees torsional or shear loads.

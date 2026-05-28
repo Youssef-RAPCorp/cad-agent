@@ -1,0 +1,25 @@
+name: nema34
+category: motor
+description: NEMA 34 frame stepper motor (high torque)
+units: mm
+
+face_size: 86.0
+length_typical: 80.0
+length_options: [80, 98, 117, 150]
+
+shaft_diameter: 14.0
+shaft_length: 32.0
+shaft_flat_offset: 1.0
+shaft_flat_length: 25.0
+
+bolt_circle_pattern: square
+bolt_spacing: 69.6
+bolt_thread: M6
+bolt_clearance_diameter: 6.6
+bolt_screw_depth_max: 8.0
+bolt_count: 4
+
+pilot_diameter: 73.0
+pilot_height: 2.0
+
+cable_exit: rear

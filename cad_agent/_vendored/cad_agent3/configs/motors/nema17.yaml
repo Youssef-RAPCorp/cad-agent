@@ -1,0 +1,32 @@
+# NEMA 17 stepper motor — face dimensions and mount
+# All dimensions in mm unless noted.
+name: nema17
+category: motor
+description: NEMA 17 frame stepper motor (1.8° standard)
+units: mm
+
+# Frame
+face_size: 42.3            # square face dimension (≈42mm nominal)
+length_typical: 40.0       # body length varies by torque rating; common values: 23, 34, 40, 48
+length_options: [23, 34, 40, 48]
+
+# Shaft
+shaft_diameter: 5.0
+shaft_length: 22.0
+shaft_flat_offset: 0.45    # D-cut depth from full circle
+shaft_flat_length: 15.0    # length of D-cut along shaft
+
+# Mounting (4 screws on a square pattern)
+bolt_circle_pattern: square    # 4 bolts at corners of a square
+bolt_spacing: 31.0             # center-to-center, both axes
+bolt_thread: M3
+bolt_clearance_diameter: 3.4   # for thru-hole in mating part
+bolt_screw_depth_max: 4.5      # do not exceed
+bolt_count: 4
+
+# Pilot/spigot (raised circular boss around shaft for centering)
+pilot_diameter: 22.0
+pilot_height: 2.0
+
+# Cable
+cable_exit: rear           # cable exits opposite the shaft

@@ -1,0 +1,22 @@
+patterns:
+  - id: pcb_standoffs
+    summary: |
+      4 cylindrical posts (printed or brass) with M2.5 or M3 threads,
+      lifting the PCB ~5-10mm off the mounting surface for thermal
+      and electrical clearance.
+    geometry_constraints:
+      typical_height_mm: 5-10
+      M2_5_standoff_OD_mm: 5
+      M3_standoff_OD_mm: 6
+
+  - id: pcb_snap_clips
+    summary: |
+      Plastic clips on the case that snap over the PCB edge. No
+      screws. Common in consumer electronics.
+    when_to_use: High-volume cases where assembly time matters.
+
+  - id: pcb_slide_in_grooves
+    summary: |
+      Two parallel grooves in the case wall, PCB slides in like a
+      drawer. No fasteners, no holes in PCB.
+    when_to_use: Side-loading enclosures (stomp boxes, instruments).

@@ -1,0 +1,14 @@
+patterns:
+  - id: foam_face_pad
+    summary: |
+      Closed-cell EVA foam strip glued to the back panel where the
+      headset meets the face. Improves comfort dramatically.
+    geometry_constraints:
+      thickness_mm: 5-10
+      width_mm: 15-25
+
+  - id: nose_notch_v_cut
+    summary: |
+      V-shaped cut at the bottom of the face plate, ~30mm wide x
+      18mm deep. Lets the user's nose protrude. ESSENTIAL for
+      cardboard VR comfort.

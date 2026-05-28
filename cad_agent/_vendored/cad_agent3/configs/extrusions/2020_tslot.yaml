@@ -1,0 +1,24 @@
+# 20×20 mm aluminum T-slot extrusion (Misumi/OpenBuilds-compatible)
+name: 2020_tslot
+category: extrusion
+description: 20mm × 20mm aluminum T-slot extrusion, 6mm slot
+units: mm
+
+# Cross section
+width: 20.0
+height: 20.0
+slot_count_per_side: 1     # one T-slot per face
+slot_width: 6.0            # T-slot opening width
+slot_depth: 6.5            # depth from face to slot floor
+center_hole_diameter: 4.2  # central tapping hole, M5 self-tap
+
+# Wall thickness (for FEA / mass estimates)
+wall_thickness: 1.8
+
+# Compatible fasteners
+slot_nut_type: M5_T_nut
+end_screw: M5
+end_clearance_hole_in_mating_part: 5.5
+
+# Standard available lengths (mm)
+common_lengths: [250, 500, 1000, 1500, 2000, 3000]

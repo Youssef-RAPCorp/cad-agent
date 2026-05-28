@@ -1,0 +1,120 @@
+# Validated cardboard fold patterns from real commercial products
+# and packaging engineering literature.
+
+patterns:
+  - id: auto_bottom_box
+    aliases: [collapsible_tube, automatic_bottom, snap_bottom_box]
+    summary: |
+      Four-panel rectangular tube with closed-loop hinge connectivity.
+      Side walls and front/back are connected as one continuous strip
+      whose ends meet at a single closure tab. Press two opposing walls
+      together to collapse the tube flat; folded thickness ≈ 5 layers
+      of material.
+    use_cases:
+      - foldable VR headsets (FoloVR, VR Customized)
+      - tissue boxes
+      - flat-pack shipping cartons
+      - foldable display stands
+    key_parameters:
+      panel_count: 4
+      hinge_type: living_hinge_score_line
+      collapse_mechanism: cross_section_flatten
+      folded_thickness_layers: 5
+      cycle_lifetime: 200-500
+    geometry_constraints:
+      hinge_score_depth_ratio: 0.4   # 40% of material thickness
+      panel_grain_orientation: perpendicular_to_hinge
+      closure_tab_min_width_mm: 12
+    real_world_validation:
+      - product: VR Customized "VR Cardboard Fold"
+        url: https://www.vrcustomized.ch/en/products/vr-cardboard-fold
+        folded_thickness_mm: 16
+        deployed_form: Google Cardboard v2.2
+      - product: FoloVR
+        notes: handheld variant; same fold topology
+    failure_modes:
+      - score_line_fatigue_over_500_cycles
+      - humidity_softening_in_pocket_over_weeks
+      - corner_crushing_under_compression
+    when_to_use: |
+      Single-piece foldable enclosures requiring fold-flat storage
+      and rapid manual deployment. Best for items 50-300mm in any
+      dimension. Not suitable for sealed/waterproof enclosures.
+
+  - id: miura_ori_fold
+    aliases: [miura_fold, herringbone_fold]
+    summary: |
+      Rigid-foldable origami pattern of parallelograms in herringbone
+      arrangement. Single sheet collapses along ONE axis with a single
+      pull. Used in deployable solar arrays and architectural surfaces.
+    use_cases:
+      - deployable solar panels (real spacecraft application)
+      - foldable maps
+      - large-area pop-up shades
+    key_parameters:
+      fold_pattern: parallelogram_grid
+      degrees_of_freedom: 1   # single-pull deployment
+      compression_ratio: 0.05-0.10   # folds to 5-10% of deployed area
+    geometry_constraints:
+      parallelogram_angle_deg: 60-75
+      min_panel_width_mm: 15   # below this, hinge stress is too high
+    when_to_use: |
+      Need a LARGE single-axis deployment (e.g. 200mm × 200mm to
+      1m × 1m). NOT suitable for closed enclosures — Miura unfolds
+      flat, not into a 3D box.
+    not_suitable_for:
+      - VR headsets (requires 3D enclosure)
+      - small parts (panels too small for clean folding)
+
+  - id: tuck_top_box
+    aliases: [snap_lock_box, friction_lock_carton]
+    summary: |
+      Single-sheet box with tuck-in flaps that lock via friction. Used
+      for retail packaging where one panel folds inside another's slot.
+      No glue required for assembly.
+    use_cases:
+      - retail product boxes
+      - phone/tablet packaging
+      - foldable storage boxes
+    key_parameters:
+      panel_count: 6
+      closure_method: friction_tuck
+      tuck_depth_mm: 8-15
+    when_to_use: |
+      Boxes that need to be reusable and reclosable. Trade-off: bulkier
+      folded than auto_bottom (typically ~10 layers).
+    not_suitable_for:
+      - very thin folded targets (under 12mm)
+
+  - id: gable_top_carton
+    aliases: [milk_carton_top, peaked_top]
+    summary: |
+      Carton with gable (peaked) top formed by folding the upper edges
+      together. Common in food packaging (milk, juice). Self-sealing
+      via friction or glue.
+    when_to_use: |
+      Liquid-resistant packaging where the seal is the priority over
+      reclosability. NOT suitable for VR/optical applications because
+      the gable creates a non-rectangular interior.
+
+  - id: living_hinge_strip
+    aliases: [score_line_hinge, accordion_hinge]
+    summary: |
+      A series of parallel score lines on a single sheet creating a
+      thin flexible region that bends but doesn't separate. Each
+      score removes ~30-50% of material thickness.
+    use_cases:
+      - book bindings
+      - foldable phone-stand
+      - any single-sheet foldable item
+    key_parameters:
+      score_depth_ratio: 0.3-0.5   # of material thickness
+      score_width_mm: 0.5-1.5
+      cycles_to_failure_at_40pct_depth: 200-500
+      cycles_to_failure_at_30pct_depth: 500-1000
+    geometry_constraints:
+      score_must_be_on_outside_of_fold: true
+      flute_perpendicular_to_score: true   # for corrugated cardboard
+    when_to_use: |
+      Any single-sheet foldable cardboard product. The fundamental
+      hinge primitive — used inside other patterns.

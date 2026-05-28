@@ -1,0 +1,100 @@
+# Standard clearance hole and tap drill diameters for metric coarse threads.
+# Use clearance_diameter when the hole accepts a screw passing THROUGH.
+# Use tap_drill_diameter when the hole will be tapped.
+# Source: ISO 273 (clearance, "medium"), ISO 7045 (head dims), ISO 7991 (tap drills).
+name: metric_screws
+category: fastener
+description: Metric coarse thread sizes — clearance, tap, and head dimensions
+units: mm
+
+sizes:
+  M2:
+    nominal_diameter: 2.0
+    pitch: 0.4
+    clearance_diameter: 2.4   # close fit
+    clearance_diameter_medium: 2.6
+    tap_drill_diameter: 1.6
+    socket_head_diameter: 3.8
+    socket_head_height: 2.0
+    countersink_diameter: 4.4
+    countersink_angle: 90
+
+  M2.5:
+    nominal_diameter: 2.5
+    pitch: 0.45
+    clearance_diameter: 2.9
+    clearance_diameter_medium: 3.1
+    tap_drill_diameter: 2.05
+    socket_head_diameter: 4.5
+    socket_head_height: 2.5
+    countersink_diameter: 5.5
+    countersink_angle: 90
+
+  M3:
+    nominal_diameter: 3.0
+    pitch: 0.5
+    clearance_diameter: 3.4
+    clearance_diameter_medium: 3.6
+    tap_drill_diameter: 2.5
+    socket_head_diameter: 5.5
+    socket_head_height: 3.0
+    countersink_diameter: 6.5
+    countersink_angle: 90
+
+  M4:
+    nominal_diameter: 4.0
+    pitch: 0.7
+    clearance_diameter: 4.5
+    clearance_diameter_medium: 4.8
+    tap_drill_diameter: 3.3
+    socket_head_diameter: 7.0
+    socket_head_height: 4.0
+    countersink_diameter: 8.5
+    countersink_angle: 90
+
+  M5:
+    nominal_diameter: 5.0
+    pitch: 0.8
+    clearance_diameter: 5.5
+    clearance_diameter_medium: 5.8
+    tap_drill_diameter: 4.2
+    socket_head_diameter: 8.5
+    socket_head_height: 5.0
+    countersink_diameter: 10.4
+    countersink_angle: 90
+
+  M6:
+    nominal_diameter: 6.0
+    pitch: 1.0
+    clearance_diameter: 6.6
+    clearance_diameter_medium: 7.0
+    tap_drill_diameter: 5.0
+    socket_head_diameter: 10.0
+    socket_head_height: 6.0
+    countersink_diameter: 12.6
+    countersink_angle: 90
+
+  M8:
+    nominal_diameter: 8.0
+    pitch: 1.25
+    clearance_diameter: 9.0
+    clearance_diameter_medium: 10.0
+    tap_drill_diameter: 6.8
+    socket_head_diameter: 13.0
+    socket_head_height: 8.0
+    countersink_diameter: 17.3
+    countersink_angle: 90
+
+  M10:
+    nominal_diameter: 10.0
+    pitch: 1.5
+    clearance_diameter: 11.0
+    clearance_diameter_medium: 12.0
+    tap_drill_diameter: 8.5
+    socket_head_diameter: 16.0
+    socket_head_height: 10.0
+    countersink_diameter: 20.0
+    countersink_angle: 90
+
+# Common screw lengths (under-head length, mm)
+common_lengths_mm: [3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80]

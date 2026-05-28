@@ -1,0 +1,23 @@
+name: arduino_uno
+category: board
+description: Arduino Uno R3 PCB outline and mounting holes (rev. 3, 2012-present)
+units: mm
+
+length: 68.6
+width: 53.4
+thickness: 1.6
+
+# Mounting hole positions (X, Y) measured from the lower-left corner of
+# the PCB (where USB faces -X, power jack faces -X). Hole diameter is
+# the standard plated through-hole.
+mounting_holes:
+  - {x: 14.0,  y:  2.5,  diameter: 3.2}
+  - {x: 15.2,  y: 50.7,  diameter: 3.2}
+  - {x: 66.1,  y: 35.5,  diameter: 3.2}
+  - {x: 66.1,  y:  7.6,  diameter: 3.2}
+
+# Notable component clearance volumes (so a case has clearance for them)
+clearance_zones:
+  - {name: usb_b,        x:  9.5,  y: 47.5, w: 14.0, h: 12.5, z_above: 11.5}
+  - {name: power_jack,   x:  4.0,  y: 35.5, w: 14.0, h:  9.0, z_above: 11.0}
+  - {name: pin_headers,  x:  0,    y:  0,   w: 68.6, h: 53.4, z_above:  9.0}

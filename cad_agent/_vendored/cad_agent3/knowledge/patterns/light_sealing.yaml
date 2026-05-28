@@ -1,0 +1,13 @@
+patterns:
+  - id: overlap_flap_light_seal
+    summary: |
+      Adjacent panels overlap by 5-10mm at every seam. Stray light
+      can't enter without going around two corners.
+
+  - id: black_interior_paint
+    summary: Black interior absorbs stray light, prevents scatter.
+
+  - id: nose_bridge_seal
+    summary: |
+      Foam strip across the nose bridge. The hardest place to seal
+      light in any face-mounted optics.

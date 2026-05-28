@@ -1,0 +1,16 @@
+patterns:
+  - id: 40mm_axial_fan_mount
+    summary: |
+      Standard 40×40×10mm axial cooling fan. 4 M3 holes at 32mm
+      spacing. Used for hot-end heatsinks and electronics.
+    geometry_constraints:
+      bolt_pattern_mm: 32x32_square
+      bolt_size: M3
+
+  - id: 80mm_axial_fan_mount
+    summary: 80×80×25mm fan, 71.5mm bolt spacing. Used for chamber/PSU cooling.
+
+  - id: 5015_blower_part_cooling
+    summary: |
+      5015 (50mm radial blower) fan for active part cooling on FDM.
+      2 M3 mount holes spaced 30mm apart on the housing flange.

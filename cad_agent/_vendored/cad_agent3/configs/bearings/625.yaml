@@ -1,0 +1,11 @@
+name: bearing_625
+category: bearing
+description: 625ZZ deep-groove ball bearing (5mm bore — common idler/pulley)
+units: mm
+
+bore_diameter: 5.0
+outer_diameter: 16.0
+width: 5.0
+chamfer: 0.2
+seal_type: ZZ
+press_fit_clearance: 0.04

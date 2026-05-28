@@ -1,0 +1,21 @@
+patterns:
+  - id: top_loading_phone_slot
+    summary: |
+      Horizontal slit in the front face of a cardboard VR headset.
+      Phone slides in from the top, held by gravity + friction tab.
+    geometry_constraints:
+      slot_length_mm: 70-90   # phone width with margin
+      slot_height_mm: 4-8     # phone thickness with margin
+      friction_tab_required: true   # otherwise phone falls out
+
+  - id: side_loading_phone_clamp
+    summary: |
+      Phone clamps between two soft pads on the sides. Spring-loaded.
+      Used in higher-quality plastic cardboard-style headsets.
+    when_to_use: Better than slot for varying phone sizes; harder to make in cardboard.
+
+  - id: phone_visible_through_slot
+    summary: |
+      Phone screen visible through a window slot. The phone is
+      entirely behind the slot, not inserted into the headset.
+    when_to_use: Stand-style viewers (Holokit). Less immersive than enclosed.

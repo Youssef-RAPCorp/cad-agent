@@ -1,0 +1,23 @@
+patterns:
+  - id: dual_slot_strap_loop
+    summary: |
+      Two parallel slots in the side panel; strap weaves through
+      both, distributing pull load across the bridge of paper
+      between them. Stronger than a single slot.
+    geometry_constraints:
+      slot_length_mm: 25-30   # wider than strap
+      slot_height_mm: 4
+      bridge_width_mm: 8-12
+
+  - id: plastic_strap_clip
+    summary: |
+      Separate plastic clip that hooks onto the side of a cardboard
+      headset and provides robust strap loops.
+    when_to_use: When cardboard slot strength is insufficient.
+
+  - id: handheld_no_strap
+    summary: |
+      Like Google Cardboard v1 — held to face by user's hands. No
+      strap at all.
+    when_to_use: Demos, short sessions, or where strap durability
+                  is a concern.

@@ -1,0 +1,75 @@
+patterns:
+  - id: corexy_kinematics
+    aliases: [core_xy, h_belt, parallel_belt_drive]
+    summary: |
+      Two stationary motors at top-rear corners of an enclosed cube
+      drive two crossed belts that move the gantry in X and Y via
+      coordinated motion. Z-axis is separate (lead screw or belt).
+    use_cases:
+      - high-speed 3D printers (Voron, RatRig, HevORT)
+      - any application needing fast XY motion with light moving mass
+    key_parameters:
+      motor_count: 3   # 2 XY + 1 Z (or 2 Z if dual-leadscrew)
+      belt_loop_count: 2
+      idler_count: 6-8   # 4 corners + 2 carriage redirectors
+      moving_gantry_mass_kg: 0.3-0.6   # typical
+    geometry_constraints:
+      frame_must_be_closed_box: true
+      belts_must_be_parallel_planes: true
+      belt_z_offset_mm: 6-10   # so loops don't collide
+    real_world_validation:
+      - product: Voron 2.4
+      - product: RatRig V-Core 3
+    when_to_use: |
+      You want fast print speeds (>100 mm/s) and don't mind the more
+      complex kinematics. Best for cube-shaped enclosures.
+
+  - id: cartesian_prusa_kinematics
+    aliases: [prusa_i3, mendel, bed_slinger]
+    summary: |
+      Independent X, Y, Z axes. Bed moves in Y on rails on the base.
+      Gantry rises on TWO Z lead screws (one per side). X axis is
+      a single rail/belt across the gantry.
+    use_cases:
+      - Prusa i3 series (most popular FDM design ever)
+      - Original Mendel
+      - most low-cost printers (Ender, Anet)
+    key_parameters:
+      motor_count: 4   # X, Y, Z×2
+      frame_topology: open_mendel  # base + two vertical towers + top crossbar
+      bed_motion: Y_axis
+      gantry_motion: X_and_Z
+    geometry_constraints:
+      frame_open_design: true   # access from front
+      bed_travel_y_mm: equal_to_print_y
+      tower_separation_x: print_x + 100mm_clearance
+    when_to_use: |
+      Cost-sensitive designs, simple kinematics, or where the user
+      wants visual access to the print. Trade-off: slower than CoreXY
+      because the bed is heavy moving mass.
+
+  - id: delta_kinematics
+    summary: |
+      Three vertical towers with carriages connected via parallel arms
+      to a central effector. All three motors coordinate to position
+      the toolhead in 3D.
+    use_cases:
+      - tall print volumes (cylindrical envelope)
+      - Anycubic Kossel, Delta Wasp
+    key_parameters:
+      motor_count: 3
+      arm_length_to_print_height_ratio: 1.5-2.0
+    not_suitable_for:
+      - flat wide prints (cylindrical envelope wastes corner space)
+      - beginners (calibration is harder than Cartesian)
+    when_to_use: |
+      Tall narrow prints, or aesthetic preference for the unique
+      motion. Generally not first-choice for most projects.
+
+  - id: corexz_kinematics
+    summary: |
+      Like CoreXY but couples X and Z axes instead. Bed moves in Y.
+      Less common; used in printers where you want a small lightweight
+      X carriage and don't mind a heavier Z stage.
+    when_to_use: |
+      Niche. Only if you have a specific reason CoreXY won't work.
