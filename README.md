@@ -188,7 +188,27 @@ print(sheet.summary())
 #   preview: cad_output/part_4f8e2c19_sheet.png
 ```
 
-For dimensioned sheets, build a `DrawingSpec` declaratively — every entity and annotation is a validated Pydantic model:
+**LLM-assisted drafting** goes the other way — describe the part and the LLM emits the full dimensioned `DrawingSpec` (geometry, dims, hole callouts, title block), which is Pydantic-validated, built, and collision-checked, with errors fed back to the model for revision (needs an API key, like `generate()`):
+
+```python
+from cad_agent.drawings import generate_drawing
+
+sheet = generate_drawing(
+    "A flange plate, OD 120mm, with 8 M6 clearance holes on a 95mm "
+    "bolt circle and a 40mm center bore"
+)
+print(sheet.summary())
+```
+
+Both are also available from the terminal:
+
+```bash
+cad-agent-draw cad_output/part.stl                        # multi-view from a model (offline)
+cad-agent-draw "spacer plate 80x40mm with two M3 holes"   # LLM-drafted, dimensioned
+cad-agent "M6 hex nut, 5mm thick" --draw                  # generate 3D model + sheet in one go
+```
+
+For full manual control, build a `DrawingSpec` declaratively — every entity and annotation is a validated Pydantic model:
 
 ```python
 from cad_agent.drawings import (

@@ -70,8 +70,8 @@ except ImportError as exc:  # pragma: no cover - exercised only without extras
 from ._vendored.rapcad_drawings.standards import SHEETS
 
 __all__ = [
-    # Sheet-from-model bridge
-    "draw_multiview", "SheetResult",
+    # Sheet-from-model bridge + LLM-assisted generation
+    "draw_multiview", "generate_drawing", "SheetResult",
     # Top level
     "DrawingSpec", "DrawingBuilder", "BuildReport", "build_dxf",
     "render_preview", "validate", "Finding",
@@ -94,7 +94,8 @@ class SheetResult:
     Fields:
       name:       artifact name (stem of the output files)
       sheet:      sheet designation ("A2", "ANSI_B", ...)
-      scale:      chosen view scale (2.0 means 2:1 on paper)
+      scale:      chosen view scale (2.0 means 2:1 on paper; None when
+                  the spec came from an LLM and no numeric scale applies)
       dxf_path:   path to the written DXF
       png_path:   path to the sheet preview PNG (None if preview=False)
       spec:       the DrawingSpec that was built — tweak and rebuild for
@@ -105,7 +106,7 @@ class SheetResult:
 
     name: str
     sheet: str
-    scale: float
+    scale: Optional[float]
     dxf_path: Path
     png_path: Optional[Path] = None
     spec: Optional[DrawingSpec] = None
@@ -113,7 +114,8 @@ class SheetResult:
     findings: List[Finding] = field(default_factory=list)
 
     def summary(self) -> str:
-        lines = [f"OK: drawing '{self.name}' on {self.sheet} at {_scale_label(self.scale)}"]
+        scale_txt = f" at {_scale_label(self.scale)}" if self.scale else ""
+        lines = [f"OK: drawing '{self.name}' on {self.sheet}{scale_txt}"]
         lines.append(f"  DXF:     {self.dxf_path}")
         if self.png_path:
             lines.append(f"  preview: {self.png_path}")
@@ -293,4 +295,197 @@ def draw_multiview(
         spec=spec,
         report=builder.report,
         findings=findings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM-assisted drawing generation
+# ---------------------------------------------------------------------------
+#
+# The vendored drawing engine was designed as an LLM target: DrawingSpec
+# is "the LLM I/O contract" and BuildReport exists so a model can
+# self-correct. This is that missing caller — it asks the configured LLM
+# for a DrawingSpec JSON and loops Pydantic-validation / build / validator
+# errors back into the prompt until the sheet is clean.
+
+_EXAMPLE_SPEC_JSON = """\
+{"sheet": "A3", "units": "mm", "workflow": "mech",
+ "title_block": {"title": "SPACER PLATE", "drawing_no": "RAP-0009", "rev": "A",
+                 "scale": "1:1", "material": "AL 6061"},
+ "entities": [
+   {"kind": "rectangle", "id": "BODY", "corner": [0, 0], "width": 80, "height": 40},
+   {"kind": "circle", "id": "H1", "center": [20, 20], "radius": 3.2},
+   {"kind": "circle", "id": "H2", "center": [60, 20], "radius": 3.2}
+ ],
+ "annotations": [
+   {"kind": "linear_dim", "id": "D_W", "p1": {"entity_id": "BODY", "snap": "vertex", "index": 0},
+    "p2": {"entity_id": "BODY", "snap": "vertex", "index": 1}, "side": "below"},
+   {"kind": "linear_dim", "id": "D_HH", "p1": {"entity_id": "H1", "snap": "center"},
+    "p2": {"entity_id": "H2", "snap": "center"}, "side": "above"},
+   {"kind": "diameter_dim", "id": "D_H1", "target": {"entity_id": "H1", "snap": "center"}},
+   {"kind": "text", "id": "N1", "text": "2X THRU",
+    "target": {"entity_id": "H1", "snap": "center"}, "height": 3.5}
+ ]}"""
+
+_DRAWING_PROMPT = """You are an expert mechanical drafter. Produce a DrawingSpec \
+JSON object describing a complete, fully dimensioned 2D engineering drawing of \
+the part below.
+
+Hard requirements:
+1. Output ONLY one JSON object valid against the schema — no markdown fences,
+   no commentary before or after.
+2. Draw the part's true geometry at real size in millimeters, near the origin.
+   The sheet viewport auto-scales; do NOT try to scale coordinates to the sheet.
+3. Give every entity and annotation a short unique id.
+4. Dimension the part fully: overall width/height, every hole diameter and
+   position, radii, and any critical feature spacing. Add text labels for
+   notes (thread callouts, finish).
+5. Attach annotations to geometry with Ref targets ({{"entity_id": ...,
+   "snap": ...}}). Omit explicit offsets/positions for annotation text — the
+   engine places text collision-free automatically.
+6. Fill in the title block: title, drawing_no, rev, scale, material.
+7. Pick the smallest sheet that fits comfortably (A3 for typical parts).
+
+JSON schema for DrawingSpec:
+{schema}
+
+Example of a valid spec:
+{example}
+
+Part to draw:
+{description}
+{feedback}
+Return the DrawingSpec JSON now."""
+
+
+def generate_drawing(
+    description: str,
+    *,
+    name: Optional[str] = None,
+    output_dir: Union[str, Path] = "./cad_output",
+    sheet: Optional[str] = None,
+    max_revisions: int = 3,
+    preview: bool = True,
+    dpi: int = 180,
+    verbose: bool = False,
+) -> SheetResult:
+    """Generate a dimensioned 2D engineering drawing from a text description.
+
+    Asks the configured LLM (Gemini by default; set CAD_AGENT_BACKEND or
+    LLM_BACKEND to 'anthropic' for Claude) to emit a DrawingSpec JSON,
+    validates it with Pydantic, builds the sheet, and runs the collision
+    validator. Validation, build, and collision errors are fed back to
+    the LLM for revision, up to `max_revisions` attempts.
+
+    Args:
+        description: what to draw, with dimensions — e.g. "A flange
+            plate, OD 120mm, with 8 M6 clearance holes on a 95mm bolt
+            circle and a 40mm center bore".
+        name: artifact name; outputs are `<name>_sheet.dxf` / `.png`.
+            Defaults to a slug of the description.
+        output_dir: where to write outputs (default ./cad_output).
+        sheet: force a sheet size; by default the LLM picks one.
+        max_revisions: LLM retry budget on invalid/colliding output.
+        preview: also render a paperspace PNG.
+        dpi: preview resolution.
+        verbose: print per-attempt progress to stderr.
+
+    Returns:
+        SheetResult. Raises RuntimeError if no valid drawing is produced
+        within max_revisions attempts.
+    """
+    import json
+    import os
+    import re
+    import sys
+
+    from pydantic import ValidationError
+
+    from ._vendored.cad_agent3 import gemini_codegen
+
+    # Map the cad-agent backend convention onto the vendored caller's.
+    if (os.environ.get("CAD_AGENT_BACKEND", "").lower() == "anthropic"):
+        os.environ.setdefault("LLM_BACKEND", "anthropic")
+
+    schema_json = json.dumps(DrawingSpec.model_json_schema(),
+                             separators=(",", ":"))
+    feedback = ""
+    last_error = "no attempts made"
+
+    for attempt in range(1, max_revisions + 1):
+        if verbose:
+            print(f"[cad_agent.drawings] attempt {attempt}/{max_revisions}",
+                  file=sys.stderr)
+        prompt = _DRAWING_PROMPT.format(
+            schema=schema_json,
+            example=_EXAMPLE_SPEC_JSON,
+            description=description,
+            feedback=feedback,
+        )
+        raw, err = gemini_codegen.call_gemini_for_code(prompt)
+        if raw is None:
+            raise RuntimeError(f"LLM call failed: {err}")
+
+        def _revise(problem: str) -> str:
+            if verbose:
+                print(f"[cad_agent.drawings]   revising: {problem[:200]}",
+                      file=sys.stderr)
+            return (
+                f"\nYOUR PREVIOUS ATTEMPT FAILED:\n{problem[:2000]}\n\n"
+                f"Previous JSON (truncated):\n{raw[:2000]}\n\n"
+                f"Fix these problems and output the corrected JSON.\n"
+            )
+
+        try:
+            spec = DrawingSpec.model_validate_json(raw)
+        except ValidationError as e:
+            last_error = f"schema validation failed: {e}"
+            feedback = _revise(last_error)
+            continue
+        if sheet is not None:
+            spec.sheet = sheet
+
+        try:
+            builder = DrawingBuilder(spec)
+            doc = builder.build()
+        except Exception as e:
+            last_error = f"build failed: {type(e).__name__}: {e}"
+            feedback = _revise(last_error)
+            continue
+
+        findings = validate(builder.index, builder._halo)
+        errors = [f for f in findings if f.severity == "error"]
+        if errors:
+            last_error = "validator errors: " + "; ".join(
+                f"{f.entity_id}: {f.message}" for f in errors[:5])
+            feedback = _revise(last_error)
+            continue
+
+        if name is None:
+            slug = re.sub(r"[^a-z0-9]+", "_",
+                          (spec.title_block.title or description).lower())
+            name = slug.strip("_")[:40] or "drawing"
+        outdir = Path(output_dir)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        dxf_path = outdir / f"{name}_sheet.dxf"
+        builder.save(str(dxf_path))
+        png_path: Optional[Path] = None
+        if preview:
+            png_path = outdir / f"{name}_sheet.png"
+            render_preview(doc, str(png_path), layout="paperspace", dpi=dpi)
+
+        return SheetResult(
+            name=name,
+            sheet=spec.sheet,
+            scale=None,
+            dxf_path=dxf_path,
+            png_path=png_path,
+            spec=spec,
+            report=builder.report,
+            findings=findings,
+        )
+
+    raise RuntimeError(
+        f"no valid drawing after {max_revisions} attempts; last: {last_error}"
     )

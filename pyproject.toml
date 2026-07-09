@@ -61,6 +61,7 @@ Issues = "https://github.com/Youssef-RAPCorp/cad-agent/issues"
 [project.scripts]
 cad-agent = "cad_agent.__main__:main"
 cad-agent-view = "cad_agent.viewer:main"
+cad-agent-draw = "cad_agent.draw_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
