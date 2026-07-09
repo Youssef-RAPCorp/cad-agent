@@ -24,6 +24,15 @@ For finer control, build a config:
 
 Lower-level building blocks (reasoning loop, operation catalog, design
 sessions with checkpointing) are exposed via `cad_agent.advanced`.
+
+2D engineering drawings (ASME/ISO-style DXF sheets with title blocks,
+dimensions, and collision-aware annotation placement) are exposed via
+`cad_agent.drawings` — install with `pip install cad-agent[drawings]`:
+
+    from cad_agent.drawings import draw_multiview
+
+    sheet = draw_multiview(result)   # result from CADAgent.generate()
+    print(sheet.summary())
 """
 
 from .agent import CADAgent, generate

@@ -119,6 +119,63 @@ for name, spec in specs:
 
 ---
 
+## 2D engineering drawings
+
+`cad_agent.drawings` turns models into production-style drawing sheets — ASME/ISO-style DXF with title blocks, revision blocks, dimensions, leaders, and **collision-aware annotation placement** (every label and dim is placed by a ring search against the ink footprint of everything else on the sheet).
+
+```bash
+pip install cad-agent[drawings]
+```
+
+One call goes from a generated model to a third-angle multi-view sheet (FRONT, TOP, RIGHT, ISO) with an auto-fit ISO 5455 scale:
+
+```python
+from cad_agent import CADAgent
+from cad_agent.drawings import draw_multiview
+
+result = CADAgent().generate("A 50×30×10mm bracket with two M3 mounting holes")
+sheet = draw_multiview(result)          # or draw_multiview("part.stl")
+print(sheet.summary())
+# OK: drawing 'part_4f8e2c19' on A2 at 2:1
+#   DXF:     cad_output/part_4f8e2c19_sheet.dxf
+#   preview: cad_output/part_4f8e2c19_sheet.png
+```
+
+For dimensioned sheets, build a `DrawingSpec` declaratively — every entity and annotation is a validated Pydantic model:
+
+```python
+from cad_agent.drawings import (
+    DrawingBuilder, DrawingSpec, TitleBlock, Units,
+    Circle, Line, LinearDim, DiameterDim, Ref, Snap,
+    render_preview, validate,
+)
+
+spec = DrawingSpec(
+    sheet="A3",
+    units=Units.MILLIMETERS,
+    workflow="mech",
+    title_block=TitleBlock(title="WIDGET BRACKET", drawing_no="RAP-0001", rev="A"),
+    entities=[
+        Circle(id="H1", center=(20, 20), radius=4.0),
+        Line(id="L1", start=(0, 0), end=(100, 0)),
+    ],
+    annotations=[
+        DiameterDim(id="D1", target=Ref(entity_id="H1", snap=Snap.CENTER)),
+        LinearDim(id="DH", p1=Ref(entity_id="L1", snap=Snap.START),
+                  p2=Ref(entity_id="L1", snap=Snap.END), side="below"),
+    ],
+)
+
+builder = DrawingBuilder(spec)
+doc = builder.build()
+builder.save("widget.dxf")
+render_preview(doc, "widget_sheet.png", layout="paperspace")
+```
+
+Sheets cover ISO A0–A4 and ASME ANSI_A–E; dimstyles follow ASME Y14.5 conventions (mech / arch / struct, mm and inch). A post-build `validate()` pass flags any residual annotation overlaps. End-to-end examples live in `tests/test_drawings_*.py`.
+
+---
+
 ## Lower-level APIs
 
 `CADAgent.generate(...)` is one-shot. For multi-step workflows with rollback and explicit operation control, use `cad_agent.advanced`:

@@ -32,10 +32,22 @@ dependencies = [
 gemini = ["google-genai>=0.3.0"]
 anthropic = ["anthropic>=0.30.0"]
 preview = ["pillow>=10.0"]
+drawings = [
+    "ezdxf>=1.1",
+    "pydantic>=2.5",
+    "matplotlib>=3.7",
+    "numpy>=1.24",
+    "trimesh>=4.0",
+]
 all = [
     "google-genai>=0.3.0",
     "anthropic>=0.30.0",
     "pillow>=10.0",
+    "ezdxf>=1.1",
+    "pydantic>=2.5",
+    "matplotlib>=3.7",
+    "numpy>=1.24",
+    "trimesh>=4.0",
 ]
 dev = [
     "pytest>=7.0",
