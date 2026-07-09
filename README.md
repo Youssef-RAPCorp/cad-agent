@@ -223,6 +223,31 @@ Sheets cover ISO A0–A4 and ASME ANSI_A–E; dimstyles follow ASME Y14.5 conven
 
 ---
 
+## Viewing outputs
+
+`cad_agent.viewer` opens any generated model in an interactive browser viewer (three.js orbit controls). It writes a single self-contained HTML file next to the model — no server, works offline. Requires `trimesh` (included in the `drawings` extra).
+
+```bash
+# open an existing output
+cad-agent-view cad_output/part.stl
+
+# or generate and view in one go
+cad-agent "M6 hex nut, 5mm thick" --view
+```
+
+From Python:
+
+```python
+from cad_agent.viewer import view
+
+view(result)                    # a CADResult from agent.generate()
+view("cad_output/part.step")    # STL, OBJ, PLY, OFF, GLB/GLTF, or STEP
+```
+
+STEP files are tessellated through build123d; mesh formats load directly. Use `--no-open` (or `open_browser=False`) to just write the HTML.
+
+---
+
 ## Lower-level APIs
 
 `CADAgent.generate(...)` is one-shot. For multi-step workflows with rollback and explicit operation control, use `cad_agent.advanced`:

@@ -31,6 +31,9 @@ def main(argv=None) -> int:
     p.add_argument("--verbose", "-v", action="store_true")
     p.add_argument("--extra", default="",
                    help="Extra constraints to append to the prompt")
+    p.add_argument("--view", action="store_true",
+                   help="Open the generated model in a browser viewer "
+                        "(requires trimesh)")
     args = p.parse_args(argv)
 
     cfg = CADAgentConfig.from_env(
@@ -48,6 +51,15 @@ def main(argv=None) -> int:
     agent = CADAgent(cfg)
     result = agent.generate(args.spec, name=args.name, extra_constraints=args.extra)
     print(result.summary())
+
+    if args.view and result.success and result.stl_path:
+        from .viewer import view
+        try:
+            out = view(result)
+            print(f"viewer: {out}")
+        except ImportError as exc:
+            print(f"could not open viewer: {exc}", file=sys.stderr)
+
     return 0 if result.success else 1
 
 
