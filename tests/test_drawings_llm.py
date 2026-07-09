@@ -99,3 +99,33 @@ def test_cli_missing_model_file(tmp_path, capsys):
     rc = main([str(tmp_path / "nope.stl")])
     assert rc == 1
     assert "not found" in capsys.readouterr().err
+
+
+def test_cli_step_file_never_goes_to_llm(tmp_path, capsys):
+    """Regression: a .step path used to fall through to description mode
+    and get sent to the LLM as prose."""
+    rc = main([str(tmp_path / "part.step")])
+    assert rc == 1  # model mode → missing-file error, NOT an LLM call
+    assert "not found" in capsys.readouterr().err
+
+
+def test_cli_existing_file_with_unknown_suffix(tmp_path, capsys):
+    txt = tmp_path / "notes.txt"
+    txt.write_text("some notes")
+    rc = main([str(txt)])
+    assert rc == 1
+    assert "not a supported model format" in capsys.readouterr().err
+
+
+def test_cli_step_model_mode(tmp_path, capsys):
+    build123d = pytest.importorskip("build123d")
+    pytest.importorskip("trimesh")
+    from build123d import Box, export_step
+
+    step = tmp_path / "block.step"
+    export_step(Box(30, 20, 10), str(step))
+    rc = main([str(step), "--sheet", "A3", "--no-preview"])
+    assert rc == 0
+    assert "OK: drawing 'block' on A3" in capsys.readouterr().out
+    assert (tmp_path / "block_sheet.dxf").exists()
+    assert (tmp_path / "block_tessellated.stl").exists()

@@ -165,8 +165,9 @@ def draw_multiview(
 
     Args:
         source: a CADResult from CADAgent.generate() (its STL is used),
-                or a path to any mesh file trimesh can read (STL, OBJ,
-                PLY, OFF, GLB).
+                a path to any mesh file trimesh can read (STL, OBJ,
+                PLY, OFF, GLB), or a STEP file (tessellated through
+                build123d; the intermediate STL is kept in output_dir).
         name: artifact name; outputs are `<name>_sheet.dxf` / `.png`.
               Defaults to the CADResult name or the mesh file stem.
         output_dir: where to write outputs. Defaults to the CADResult's
@@ -211,6 +212,15 @@ def draw_multiview(
         raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
     sh = SHEETS[sheet]
 
+    # STEP is BREP — trimesh can't read it. Tessellate via build123d and
+    # keep the STL beside the outputs so the spec stays rebuildable.
+    if stl_path.suffix.lower() in (".step", ".stp"):
+        from build123d import import_step, export_stl
+        shape = import_step(str(stl_path))
+        mesh_path = outdir / f"{name}_tessellated.stl"
+        export_stl(shape, str(mesh_path))
+        stl_path = mesh_path
+
     # --- Project the three orthographic views to size the layout ----
     # (model3d lazily imports trimesh and raises a helpful error if
     # it's missing.)
@@ -228,16 +238,21 @@ def draw_multiview(
     usable_w = sh.inside_width
     usable_h = sh.inside_height - _TITLE_BLOCK_RESERVE
     if scale is None:
-        fit_w = (usable_w - spacing) / max(front.width + right.width, 1e-9)
+        # The iso column (at 0.7x) sits to the right of the right view,
+        # so it counts toward the width budget.
+        fit_w = (usable_w - 2 * spacing) / max(
+            front.width + right.width + 0.7 * iso.width, 1e-9)
         fit_h = (usable_h - spacing) / max(front.height + top.height, 1e-9)
-        # 0.85 leaves breathing room for view labels and the iso view.
+        # 0.85 leaves breathing room for view labels.
         scale = _pick_scale(min(fit_w, fit_h) * 0.85)
 
     # --- Third-angle layout (origins are view centers, sheet mm) -----
     fw, fh = front.width * scale, front.height * scale
     tw, th = top.width * scale, top.height * scale
     rw = right.width * scale
-    total_w = fw + spacing + rw
+    iso_scale = scale * 0.7
+    iw = iso.width * iso_scale
+    total_w = fw + spacing + rw + spacing + iw
     total_h = fh + spacing + th
     bx = sh.border_left + max((usable_w - total_w) / 2.0, 0.0)
     by = (sh.border_bottom + _TITLE_BLOCK_RESERVE
@@ -246,8 +261,10 @@ def draw_multiview(
     front_c = (bx + fw / 2.0, by + fh / 2.0)
     top_c = (front_c[0], by + fh + spacing + th / 2.0)
     right_c = (bx + fw + spacing + rw / 2.0, front_c[1])
-    iso_c = (right_c[0], top_c[1])
-    iso_scale = scale * 0.7
+    # Iso in its own column right of the right view, clamped to the sheet.
+    iso_x = min(bx + fw + spacing + rw + spacing + iw / 2.0,
+                sh.width_mm - sh.border_right - iw / 2.0)
+    iso_c = (iso_x, top_c[1])
 
     spec = DrawingSpec(
         sheet=sheet,

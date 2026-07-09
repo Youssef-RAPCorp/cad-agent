@@ -243,6 +243,11 @@ def project_mesh(mesh: trimesh.Trimesh,
                 pts_cam = pts_3d @ R.T
                 for i in range(len(pts_cam) - 1):
                     a = pts_cam[i]; b = pts_cam[i + 1]
+                    # Same degeneracy skip as the silhouette pass —
+                    # outline paths can contain zero-length segments.
+                    if (abs(a[0] - b[0]) < 1e-9
+                            and abs(a[1] - b[1]) < 1e-9):
+                        continue
                     edges_kept.append(((float(a[0]), float(a[1])),
                                        (float(b[0]), float(b[1]))))
     except Exception:

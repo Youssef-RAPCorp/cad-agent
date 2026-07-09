@@ -17,7 +17,8 @@ import argparse
 import sys
 from pathlib import Path
 
-_MODEL_SUFFIXES = {".stl", ".obj", ".ply", ".off", ".glb", ".gltf"}
+_MODEL_SUFFIXES = {".stl", ".obj", ".ply", ".off", ".glb", ".gltf",
+                   ".step", ".stp"}
 
 
 def main(argv=None) -> int:
@@ -27,9 +28,9 @@ def main(argv=None) -> int:
                     "a 3D model file or a natural-language part description.",
     )
     p.add_argument("source",
-                   help="Path to an STL/OBJ/PLY/OFF/GLB file (multi-view "
-                        "sheet), or a text description of the part "
-                        "(LLM-drafted dimensioned drawing)")
+                   help="Path to an STL/OBJ/PLY/OFF/GLB/STEP file "
+                        "(multi-view sheet), or a text description of the "
+                        "part (LLM-drafted dimensioned drawing)")
     p.add_argument("--name", default=None, help="Artifact name for outputs")
     p.add_argument("--output", "-o", default=None,
                    help="Output directory (default: next to the model, or "
@@ -53,10 +54,17 @@ def main(argv=None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # Mode detection: an existing file (or anything that looks like a
+    # model path) is NEVER sent to the LLM as a description.
     src = Path(args.source)
     is_model = src.suffix.lower() in _MODEL_SUFFIXES
     if is_model and not src.exists():
         print(f"error: model file not found: {src}", file=sys.stderr)
+        return 1
+    if not is_model and src.exists() and src.is_file():
+        print(f"error: {src} exists but {src.suffix or 'its type'!r} is not "
+              f"a supported model format {sorted(_MODEL_SUFFIXES)}",
+              file=sys.stderr)
         return 1
 
     try:
