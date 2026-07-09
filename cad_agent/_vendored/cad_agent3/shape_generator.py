@@ -191,6 +191,7 @@ def generate_shape(
     description: str,
     extra_constraints: str = "",
     max_iterations: int = 3,
+    execute: bool = True,
 ) -> GenerationResult:
     """Generate a build123d Part from a natural-language description.
 
@@ -203,6 +204,9 @@ def generate_shape(
         extra_constraints: optional additional constraints text appended
             to the prompt (e.g. "Target volume around 1000 mm^3").
         max_iterations: retry budget on parse/exec failures.
+        execute: if False, return the generated code without running it
+            in the sandbox (part will be None, and there are no retries
+            since execution errors are what drive them).
 
     Returns:
         GenerationResult with part (Part or None), code, error, attempts.
@@ -235,6 +239,12 @@ def generate_shape(
                 error=f"LLM call failed: {err}", attempts=attempt,
             )
         last_code = code
+
+        if not execute:
+            return GenerationResult(
+                description=description, code=code, part=None,
+                error=None, attempts=attempt,
+            )
 
         part, exec_err = _execute_code(code)
         if part is not None:
