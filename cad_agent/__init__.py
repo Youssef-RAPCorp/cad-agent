@@ -27,7 +27,7 @@ sessions with checkpointing) are exposed via `cad_agent.advanced`.
 
 2D engineering drawings (ASME/ISO-style DXF sheets with title blocks,
 dimensions, and collision-aware annotation placement) are exposed via
-`cad_agent.drawings` — install with `pip install cad-agent[drawings]`:
+`cad_agent.drawings` — install with `pip install -e ".[drawings]"`:
 
     from cad_agent.drawings import draw_multiview
 

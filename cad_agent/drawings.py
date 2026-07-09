@@ -37,9 +37,9 @@ Two ways in:
     #   DXF:     cad_output/part_4f8e2c19_sheet.dxf
     #   preview: cad_output/part_4f8e2c19_sheet.png
 
-Requires the optional drawing dependencies:
+Requires the optional drawing dependencies (from the repo root):
 
-    pip install cad-agent[drawings]
+    pip install -e ".[drawings]"
 
 (`draw_multiview` additionally needs `trimesh` for mesh import, which the
 `drawings` extra includes.)
@@ -63,7 +63,8 @@ except ImportError as exc:  # pragma: no cover - exercised only without extras
     raise ImportError(
         "cad_agent.drawings requires the optional drawing dependencies "
         f"({exc}). Install them with:\n\n"
-        "    pip install cad-agent[drawings]\n"
+        "    pip install -e \".[drawings]\"    # from the cad-agent repo root\n"
+        "    # or: pip install ezdxf pydantic matplotlib numpy trimesh\n"
     ) from exc
 
 from ._vendored.rapcad_drawings.standards import SHEETS

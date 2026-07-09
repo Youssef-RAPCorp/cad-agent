@@ -14,19 +14,64 @@ Under the hood it uses an LLM (Gemini Flash by default; Claude available) to gen
 
 ## Install
 
+`cad-agent` is not published to PyPI yet — install it from the GitHub repo.
+
+### From GitHub (recommended)
+
 ```bash
-pip install cad-agent[gemini]      # for Gemini backend
-pip install cad-agent[anthropic]   # for Claude backend
-pip install cad-agent[all]         # both + extras
+git clone git@github.com:Youssef-RAPCorp/cad-agent.git
+cd cad-agent
+
+# Create and activate a virtual environment
+python3 -m venv cad_venv
+source cad_venv/bin/activate
+
+# Install in editable mode with the extras you need
+pip install -e ".[gemini]"             # Gemini backend (default)
+pip install -e ".[anthropic]"          # Claude backend
+pip install -e ".[drawings]"           # 2D engineering drawings (no LLM needed)
+pip install -e ".[gemini,drawings]"    # typical setup
+pip install -e ".[all]"                # everything
 ```
 
-Set your API key:
+Editable mode (`-e`) means `git pull` picks up updates without reinstalling.
+
+Or install straight from GitHub without cloning:
+
+```bash
+pip install "cad-agent[gemini] @ git+https://github.com/Youssef-RAPCorp/cad-agent.git"
+```
+
+### Set your API key
+
+Model generation calls an LLM, so it needs a key (the 2D drawing engine works without one):
 
 ```bash
 export GEMINI_API_KEY=...          # default backend
 # or
 export ANTHROPIC_API_KEY=...
 export CAD_AGENT_BACKEND=anthropic
+```
+
+### Run it
+
+From the command line:
+
+```bash
+cad-agent "A 20mm cube with a 5mm through-hole" --name cube -o ./cad_output
+```
+
+This writes `cube.step`, `cube.stl`, and the generated `cube.py` script into `./cad_output`. Run `cad-agent --help` for all flags.
+
+Or from Python — see the quick start below.
+
+> **Note:** don't run files inside the `cad_agent/` package directly (`python cad_agent/agent.py` fails with a relative-import error). Use the `cad-agent` CLI, `python -m cad_agent`, or `import cad_agent` from your own script.
+
+### Verify the install
+
+```bash
+pip install pytest
+pytest tests/          # all tests run offline — no API key required
 ```
 
 ---
@@ -124,8 +169,10 @@ for name, spec in specs:
 `cad_agent.drawings` turns models into production-style drawing sheets — ASME/ISO-style DXF with title blocks, revision blocks, dimensions, leaders, and **collision-aware annotation placement** (every label and dim is placed by a ring search against the ink footprint of everything else on the sheet).
 
 ```bash
-pip install cad-agent[drawings]
+pip install -e ".[drawings]"       # from the repo root
 ```
+
+No API key needed — the drawing engine is pure geometry, and also works standalone on any existing STL/OBJ/PLY/GLB file.
 
 One call goes from a generated model to a third-angle multi-view sheet (FRONT, TOP, RIGHT, ISO) with an auto-fit ISO 5455 scale:
 
