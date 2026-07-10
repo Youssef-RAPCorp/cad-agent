@@ -205,13 +205,17 @@ Rules:
    parts so patterns work (gear_z36, gear_z12, ...).
 5. Prefer FEWER, LARGER LLM parts (a case as one part, not 12 panels);
    use many instances of few gear primitives for trains.
-6. CONTAINERS: any case/housing that other parts sit INSIDE must be
-   described as a HOLLOW shell with explicit wall thickness and
-   openings ("four 15mm walls, hollow interior, open front"), AND set
-   "carve": true on it — the pipeline then carves exact clearance
-   pockets into it for any contents that would otherwise collide, so
-   interior fit cannot fail. Never set carve on precision parts (gears,
-   arbors, hands). Interior parts should still clear walls by >= 5mm.
+6. STRUCTURE vs MECHANISM: set "carve": true on EVERY structural part
+   — case sections, hoods, boxes, plates, boards, frames, anything
+   other parts sit inside, rest on, or pass through. The pipeline
+   carves exact clearance pockets into carve parts for whatever
+   touches them (an arbor through a carve movement plate gets its
+   pivot hole drilled automatically). NEVER set carve on mechanism
+   parts: gears, arbors, hands, pendulum, weights, cables — those must
+   stay intact, and mechanism-vs-mechanism collisions still fail
+   verification. Describe containers as hollow shells with wall
+   thickness and openings anyway; carving is the safety net, not the
+   design.
 7. Output ONLY the JSON object — no markdown fences, no commentary.
 
 JSON schema:
@@ -264,9 +268,10 @@ def _build_part(part: PartSpec, cache: Dict[str, object], verbose: bool):
         bb = gen.part.bounding_box()
         size = (bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
         # Orientation-agnostic budget: instances rotate parts anyway, so
-        # compare SORTED dimensions with 15% tolerance (a plate modeled
-        # flat still passes a standing envelope).
-        if all(s <= e * 1.15 + 1e-6
+        # compare SORTED dimensions. Tolerance is 15% plus a 2mm
+        # absolute floor — percentage-only tolerance made tiny budgets
+        # (a 2mm-thick hand) fail on fractions of a millimeter.
+        if all(s <= e * 1.15 + 2.0
                for s, e in zip(sorted(size), sorted(part.envelope))):
             cache[key] = gen.part
             return gen.part, None

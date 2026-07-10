@@ -148,6 +148,22 @@ def test_envelope_is_orientation_agnostic(tmp_path, mock_planner, monkeypatch):
     assert calls["n"] == 1
 
 
+def test_envelope_has_absolute_floor(tmp_path, mock_planner, monkeypatch):
+    """A 4mm-thick clock hand must pass a 2mm-thick budget: tiny envelope
+    dimensions get a 2mm absolute allowance, not just 15%."""
+    plan = json.loads(GOOD_PLAN)
+    plan["parts"][1]["envelope"] = [20, 100, 2]
+    plan["instances"][2]["at"] = [12, 0, -10]
+    def hand(desc, extra_constraints="", **kw):
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 2) * Box(18, 100, 4), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", hand)
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("clock hand", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+
+
 def test_envelope_violation_feeds_back(tmp_path, mock_planner, monkeypatch):
     """An LLM part that busts its bounding-box budget is rejected and the
     failure reaches the planner."""
