@@ -88,6 +88,22 @@ def test_labels_stay_inside_sheet_borders(stl_path):
     assert b.index.has("__guard_titleblock")
 
 
+def test_guards_do_not_inflate_viewport_bounds(stl_path):
+    """Regression: the sheet-margin guard slabs (±500mm) were included
+    in overall_bounds(), which drives the paperspace viewport autoscale —
+    every drawing rendered tiny in the middle of the sheet."""
+    spec = DrawingSpec(
+        sheet="A4", units=Units.MILLIMETERS, workflow="mech",
+        entities=[Mesh3DView(id="V", path=str(stl_path), view="front",
+                             origin=(150, 120), scale=1.0)],
+    )
+    b = DrawingBuilder(spec)
+    b.build()
+    bounds = b.index.overall_bounds()
+    assert bounds.xmin > -50 and bounds.xmax < 350   # content, not guards
+    assert bounds.ymin > -50 and bounds.ymax < 350
+
+
 def test_frame_draws_detail_circle(stl_path):
     b = _build(stl_path, region=(25, 6, 40, 16), scale=4.0, frame=True)
     circles = [e for e in b.msp if e.dxftype() == "CIRCLE"]

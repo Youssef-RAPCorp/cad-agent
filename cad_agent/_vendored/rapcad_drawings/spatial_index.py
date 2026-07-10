@@ -109,10 +109,16 @@ class SpatialIndex:
     # -- queries --
 
     def overall_bounds(self) -> AABB:
-        """Union AABB of every obstacle entity."""
+        """Union AABB of every obstacle entity.
+
+        Guard entities (synthetic sheet-margin obstacles) are excluded:
+        they exist only to constrain text placement and must not count
+        as drawing content (the paperspace viewport is scaled to these
+        bounds).
+        """
         out = AABB()
         for e in self._by_id.values():
-            if not e.obstacle:
+            if not e.obstacle or e.kind == "guard":
                 continue
             b = e.aabb
             if b.is_empty:
