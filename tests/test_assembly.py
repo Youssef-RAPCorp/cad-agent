@@ -171,6 +171,44 @@ def test_exhausts_revisions(tmp_path, mock_planner, mock_codegen):
     assert not result  # __bool__
 
 
+def test_carve_gives_contents_clearance(tmp_path, mock_planner, monkeypatch):
+    """A solid container marked carve:true gets exact pockets subtracted
+    for its contents — interference cannot fail on interior fit."""
+    plan = {
+        "name": "carved box",
+        "parts": [
+            {"id": "case", "description": "a solid block 60x60x60mm",
+             "envelope": [60, 60, 60], "carve": True},
+            {"id": "gear_z12", "primitive": {"kind": "involute_gear",
+                                             "module": 1.0, "teeth": 12,
+                                             "thickness": 4.0}},
+        ],
+        "instances": [
+            {"part": "case", "at": [0, 0, 0]},
+            # gear buried in the middle of the solid block
+            {"part": "gear_z12", "at": [0, 0, 28]},
+        ],
+    }
+    def solid_block(desc, extra_constraints="", **kw):
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 30) * Box(60, 60, 60), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", solid_block)
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("gear in a box", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1          # no revision needed — carving handled it
+    # carved case lost the gear's volume
+    assert result.volume_mm3 < 60 * 60 * 60 + 1
+
+
+def test_revision_feedback_includes_measured_sizes(tmp_path, mock_planner,
+                                                   mock_codegen):
+    calls = mock_planner(OVERLAP_PLAN, GOOD_PLAN)
+    result = assemble("gearbox", output_dir=tmp_path)
+    assert result.success
+    assert "MEASURED PART SIZES" in calls["prompts"][1]
+
+
 def test_plan_schema_rejects_bad_references():
     with pytest.raises(Exception):
         AssemblyPlan.model_validate_json(json.dumps({

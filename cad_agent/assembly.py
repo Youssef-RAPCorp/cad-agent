@@ -76,6 +76,9 @@ class PartSpec(BaseModel):
     description: str = ""
     primitive: Optional[GearPrimitive] = None
     envelope: Optional[Tuple[float, float, float]] = None  # max (X, Y, Z) mm
+    # Container parts: carve exact clearance pockets for any contents
+    # that would otherwise collide with this part (contents win).
+    carve: bool = False
 
     @model_validator(mode="after")
     def _needs_source(self):
@@ -204,9 +207,11 @@ Rules:
    use many instances of few gear primitives for trains.
 6. CONTAINERS: any case/housing that other parts sit INSIDE must be
    described as a HOLLOW shell with explicit wall thickness and
-   openings ("four 15mm walls, hollow interior, open front") — a solid
-   container collides with its contents and fails verification.
-   Interior parts must clear the container walls by >= 5mm.
+   openings ("four 15mm walls, hollow interior, open front"), AND set
+   "carve": true on it — the pipeline then carves exact clearance
+   pockets into it for any contents that would otherwise collide, so
+   interior fit cannot fail. Never set carve on precision parts (gears,
+   arbors, hands). Interior parts should still clear walls by >= 5mm.
 7. Output ONLY the JSON object — no markdown fences, no commentary.
 
 JSON schema:
@@ -395,8 +400,13 @@ def assemble(
              f"{len(plan.instances)} instances")
 
         # --- generate unique parts (parallel: independent LLM calls) --
+        import time
         from concurrent.futures import ThreadPoolExecutor
-        workers = max(1, int(os.environ.get("CAD_AGENT_PARALLEL", "4")))
+        workers = max(1, int(os.environ.get("CAD_AGENT_PARALLEL", "6")))
+        llm_parts = [pt for pt in plan.parts if pt.primitive is None]
+        _say(f"generating {len(plan.parts)} unique parts "
+             f"({len(llm_parts)} via LLM, {workers} parallel workers)")
+        t0 = time.time()
         solids: Dict[str, object] = {}
         part_errors: List[str] = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -408,6 +418,21 @@ def assemble(
                     part_errors.append(perr)
                 else:
                     solids[part.id] = solid
+        _say(f"part generation took {time.time() - t0:.0f}s")
+
+        # Measured sizes — included in any revision feedback so the
+        # planner places REAL geometry instead of guessed sizes.
+        sizes = []
+        for pid, solid in solids.items():
+            try:
+                bb = solid.bounding_box()
+                sizes.append(f"{pid}: {bb.max.X - bb.min.X:.0f} x "
+                             f"{bb.max.Y - bb.min.Y:.0f} x "
+                             f"{bb.max.Z - bb.min.Z:.0f} mm")
+            except Exception:
+                pass
+        measured = ("MEASURED PART SIZES (local frames, use these for "
+                    "placement):\n  " + "\n  ".join(sizes)) if sizes else ""
         if part_errors:
             last_error = ("some parts could not be generated: "
                           + "; ".join(part_errors[:4])
@@ -416,18 +441,42 @@ def assemble(
             continue
 
         # --- place instances ------------------------------------------
+        carve_ids = {pt.id for pt in plan.parts if pt.carve}
         placed = []
         counters: Dict[str, int] = {}
         for inst in plan.instances:
             counters[inst.part] = counters.get(inst.part, 0) + 1
             label = f"{inst.part}#{counters[inst.part]}"
-            placed.append((label, _place(solids[inst.part], inst)))
+            placed.append([label, _place(solids[inst.part], inst),
+                           inst.part in carve_ids])
+
+        # --- carve container clearances --------------------------------
+        # Contents win: subtract every non-carve instance from each
+        # carve-marked container it overlaps, so interior fit cannot
+        # fail on guessed cavity geometry.
+        if carve_ids:
+            n_carved = 0
+            for entry in placed:
+                if not entry[2]:
+                    continue
+                for other in placed:
+                    if other is entry or other[2]:
+                        continue
+                    try:
+                        entry[1] = entry[1] - other[1]
+                        n_carved += 1
+                    except Exception:
+                        pass
+            _say(f"carved clearance for {n_carved} content instances "
+                 f"out of {len(carve_ids)} container part(s)")
+        placed = [(label, solid) for label, solid, _ in placed]
 
         # --- verify ----------------------------------------------------
         violations = _verify_assembly(plan, placed, verbose=verbose)
         if violations:
-            last_error = "assembly verification failed: " + "; ".join(
-                violations[:6])
+            last_error = ("assembly verification failed: "
+                          + "; ".join(violations[:6])
+                          + ("\n" + measured if measured else ""))
             feedback = _revise(last_error)
             continue
 
