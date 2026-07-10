@@ -46,6 +46,19 @@ NO_VIEW_SPEC = json.dumps({
     "annotations": [],
 })
 
+# Two views stacked on top of each other — must be rejected and revised.
+OVERLAPPING_SPEC = json.dumps({
+    "sheet": "A3", "units": "mm", "workflow": "mech",
+    "title_block": {"title": "OVERLAP"},
+    "entities": [
+        {"kind": "mesh3d_view", "id": "V_FRONT", "path": "MODEL",
+         "view": "front", "origin": [150, 200], "scale": 1.0},
+        {"kind": "mesh3d_view", "id": "V_RIGHT", "path": "MODEL",
+         "view": "right", "origin": [155, 200], "scale": 1.0},
+    ],
+    "annotations": [],
+})
+
 
 @pytest.fixture
 def stl_path(tmp_path):
@@ -99,6 +112,14 @@ def test_draft_drawing_retries_until_valid(stl_path, mock_llm):
     assert sheet.dxf_path.exists()
     # The revision feedback told the LLM about the missing model views.
     assert "mesh3d_view" in calls["prompts"][2]
+
+
+def test_draft_drawing_rejects_overlapping_views(stl_path, mock_llm):
+    calls = mock_llm(OVERLAPPING_SPEC, SMART_SPEC)
+    sheet = draft_drawing(stl_path, preview=False)
+    assert calls["n"] == 2
+    assert "views overlap on the sheet" in calls["prompts"][1]
+    assert sheet.dxf_path.exists()
 
 
 def test_draft_drawing_exhausts_revisions(stl_path, mock_llm):

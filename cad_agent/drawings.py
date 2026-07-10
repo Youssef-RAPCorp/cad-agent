@@ -654,7 +654,15 @@ mesh3d_view of the SAME view direction with:
 Mark the source area on the parent view: a thin `circle` entity (layer
 "VISIBLE") at the feature's sheet position with a `text` label "A"
 targeting it. Compute sheet position as parent_origin + (feature_center
-- view_center) * parent_scale.
+- view_center) * parent_scale; its radius should ring just the zoomed
+region (~= parent_scale x region_diagonal / 2), never the whole view.
+
+SPACE BUDGET — views may NOT overlap (the engine rejects overlapping
+views): a framed detail view occupies a circle of diameter ~=
+sqrt(region_w^2 + region_h^2) x detail_scale + 6mm centered on its
+origin. Reserve that footprint plus >=15mm clearance from every other
+view before choosing origins; shrink the region, lower the detail
+scale, or take a bigger sheet if it doesn't fit.
 
 Design the sheet like a drafter — PRODUCTION quality, densely annotated:
 1. Choose the views this shape needs (tall parts: front+right+top; flat
@@ -755,6 +763,26 @@ def _call_llm_for_spec(prompt: str, image_paths=(), verbose: bool = False):
                 print(f"[cad_agent.drawings] multimodal call failed "
                       f"({exc}); falling back to text-only", file=sys.stderr)
     return gemini_codegen.call_gemini_for_code(prompt)
+
+
+def _view_overlaps(spec, builder, tol: float = 5.0):
+    """Pairs of Mesh3DView entities whose placed footprints (including
+    detail frames) overlap by more than tol mm on both axes."""
+    boxes = []
+    for ent in spec.entities:
+        if isinstance(ent, Mesh3DView):
+            ge = builder.index.get(ent.id)
+            if ge is not None and ge.aabb is not None:
+                boxes.append((ent.id, ge.aabb))
+    out = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            (ida, a), (idb, b) = boxes[i], boxes[j]
+            w = min(a.xmax, b.xmax) - max(a.xmin, b.xmin)
+            h = min(a.ymax, b.ymax) - max(a.ymin, b.ymin)
+            if w > tol and h > tol:
+                out.append((ida, idb, w, h))
+    return out
 
 
 def draft_drawing(
@@ -922,6 +950,22 @@ def draft_drawing(
             if errors:
                 last_error = "validator errors: " + "; ".join(
                     f"{x.entity_id}: {x.message}" for x in errors[:5])
+                feedback = _revise(last_error)
+                continue
+
+            # Views (including their detail frames) must not overlap
+            # each other on the sheet — the general validator only
+            # checks annotations, so enforce this here.
+            overlaps = _view_overlaps(spec, builder)
+            if overlaps:
+                last_error = (
+                    "views overlap on the sheet: "
+                    + "; ".join(f"{a} and {b} overlap by "
+                                f"{w:.0f}x{h:.0f}mm" for a, b, w, h
+                                in overlaps[:4])
+                    + ". Move the views apart (a framed detail view "
+                    "occupies a circle of diameter ~= the diagonal of "
+                    "region-size x scale, plus 6mm).")
                 feedback = _revise(last_error)
                 continue
             _say(f"spec accepted: {len(spec.entities)} entities, "
