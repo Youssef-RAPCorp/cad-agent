@@ -357,6 +357,16 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
     return violations
 
 
+def _enable_occt_parallel():
+    """Turn on OCCT's internal multi-threaded boolean algorithms —
+    a single subtraction/intersection then uses all cores."""
+    try:
+        from OCP.BOPAlgo import BOPAlgo_Options
+        BOPAlgo_Options.SetParallelMode_s(True)
+    except Exception:
+        pass
+
+
 def _call_planner(prompt: str):
     from ._vendored.cad_agent3 import gemini_codegen
     return gemini_codegen.call_gemini_for_code(prompt)
@@ -460,8 +470,11 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
         return violations
     if verbose and pairs:
         print(f"[cad_agent.assembly] checking {len(pairs)} "
-              f"AABB-overlapping pairs for interference", file=sys.stderr)
-    for i, j in pairs:
+              f"AABB-overlapping pairs for interference (parallel)",
+              file=sys.stderr)
+
+    def _check_pair(pair):
+        i, j = pair
         la, sa, _ = boxes[i]
         lb, sb, _ = boxes[j]
         try:
@@ -469,14 +482,21 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
             v = float(inter.volume) if inter is not None else 0.0
         except Exception:
             v = 0.0
-        if v > tol_mm3:
-            pa = la.rsplit("#", 1)[0]
-            pb = lb.rsplit("#", 1)[0]
-            hint = (" (mounted pair: enlarge the mounted part's bore/"
-                    "clearance beyond its shaft diameter)"
-                    if frozenset((pa, pb)) in mounted_pairs else "")
-            violations.append(
-                f"interference: {la} and {lb} overlap by {v:.1f} mm³{hint}")
+        if v <= tol_mm3:
+            return None
+        pa = la.rsplit("#", 1)[0]
+        pb = lb.rsplit("#", 1)[0]
+        hint = (" (mounted pair: enlarge the mounted part's bore/"
+                "clearance beyond its shaft diameter)"
+                if frozenset((pa, pb)) in mounted_pairs else "")
+        return f"interference: {la} and {lb} overlap by {v:.1f} mm³{hint}"
+
+    if pairs:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(pairs))) as pool:
+            for msg in pool.map(_check_pair, pairs):
+                if msg:
+                    violations.append(msg)
     return violations
 
 
@@ -509,6 +529,7 @@ def assemble(
     if (os.environ.get("CAD_AGENT_BACKEND", "").lower() == "anthropic"):
         os.environ.setdefault("LLM_BACKEND", "anthropic")
 
+    _enable_occt_parallel()
     result = AssemblyResult(spec=spec, success=False)
     outdir = Path(output_dir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -647,36 +668,44 @@ def assemble(
                         * (bb[5] - bb[2]))
 
             bbs = [_bb(e[1]) for e in placed]
-            order = sorted(range(len(placed)), key=lambda k: -_vol(bbs[k]))
-            n_pockets = 0
+            originals = [e[1] for e in placed]
             from build123d import Compound as _Compound
-            for k in order:
+            jobs = []
+            for k in range(len(placed)):
                 if not placed[k][2]:
                     continue
-                tools = []
-                for m2 in range(len(placed)):
-                    if m2 == k:
-                        continue
-                    if placed[m2][2] and _vol(bbs[m2]) >= _vol(bbs[k]):
-                        continue        # only smaller structure carves in
-                    if _ov(bbs[k], bbs[m2]):
-                        tools.append(placed[m2][1])
-                if not tools:
-                    continue
+                tools = [originals[m2] for m2 in range(len(placed))
+                         if m2 != k
+                         and not (placed[m2][2]
+                                  and _vol(bbs[m2]) >= _vol(bbs[k]))
+                         and _ov(bbs[k], bbs[m2])]
+                if tools:
+                    jobs.append((k, tools))
+
+            def _carve_one(job):
+                k, tools = job
                 try:
-                    placed[k][1] = placed[k][1] - _Compound(tools)
-                    n_pockets += len(tools)
+                    return k, originals[k] - _Compound(tools), len(tools)
                 except Exception:
+                    s, n = originals[k], 0
                     for tool in tools:
                         try:
-                            placed[k][1] = placed[k][1] - tool
-                            n_pockets += 1
+                            s = s - tool
+                            n += 1
                         except Exception:
                             pass
-                bbs[k] = _bb(placed[k][1])
+                    return k, s, n
+
+            n_pockets = 0
+            if jobs:
+                with ThreadPoolExecutor(
+                        max_workers=min(8, len(jobs))) as pool:
+                    for k, solid, n in pool.map(_carve_one, jobs):
+                        placed[k][1] = solid
+                        n_pockets += n
             _say(f"carved {n_pockets} clearance pockets into "
                  f"{len(carve_ids)} structural part(s) in "
-                 f"{time.time() - t1:.0f}s")
+                 f"{time.time() - t1:.0f}s ({len(jobs)} parallel jobs)")
         placed = [(label, solid) for label, solid, _ in placed]
 
         # --- verify precisely -------------------------------------------
