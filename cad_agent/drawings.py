@@ -736,7 +736,7 @@ def _call_llm_for_spec(prompt: str, image_paths=(), verbose: bool = False):
                or os.environ.get("CAD_AGENT_BACKEND", "gemini")).lower()
     if verbose:
         model_name = os.environ.get("GEMINI_CODEGEN_MODEL",
-                                    "gemini-3.5-flash")
+                                    "gemini-flash-latest")
         print(f"[cad_agent.drawings] calling {backend} ({model_name}) "
               f"with {len(image_paths)} view image(s)...", file=sys.stderr)
     if image_paths and backend != "anthropic":
@@ -748,7 +748,7 @@ def _call_llm_for_spec(prompt: str, image_paths=(), verbose: bool = False):
             if api_key:
                 client = genai.Client(api_key=api_key)
                 model = os.environ.get("GEMINI_CODEGEN_MODEL",
-                                       "gemini-3.5-flash")
+                                       "gemini-flash-latest")
                 parts = [types.Part.from_bytes(
                             data=Path(p).read_bytes(), mime_type="image/png")
                          for _, p in image_paths]

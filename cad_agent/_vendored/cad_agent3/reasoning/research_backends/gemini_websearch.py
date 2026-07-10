@@ -5,7 +5,7 @@ what runs in the production Gemini deployment.
 
 Environment:
     GEMINI_API_KEY (or GOOGLE_API_KEY)    required
-    GEMINI_RESEARCH_MODEL                 optional, defaults to gemini-3.5-flash
+    GEMINI_RESEARCH_MODEL                 optional, defaults to gemini-flash-latest
 """
 from __future__ import annotations
 import os
@@ -35,7 +35,7 @@ def search(query: str, max_hits: int = 5) -> ResearchResult:
             error="GEMINI_API_KEY (or GOOGLE_API_KEY) not set",
             duration_s=time.time() - t0)
 
-    model = os.environ.get("GEMINI_RESEARCH_MODEL", "gemini-3.5-flash")
+    model = os.environ.get("GEMINI_RESEARCH_MODEL", "gemini-flash-latest")
 
     prompt = f"""You are a CAD engineering researcher. Research the following query and report findings as STRUCTURED text.
 

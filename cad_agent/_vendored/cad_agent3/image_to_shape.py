@@ -6,7 +6,7 @@ photograph, sketch, or drawing of a part and want a starting-point
 build123d model.
 
 Pipeline:
-  1. Send the image to Gemini (gemini-3.5-flash by default) with a
+  1. Send the image to Gemini (gemini-flash-latest by default) with a
      structured prompt asking for the primitive breakdown: what shape
      is this, what are the approximate dimensions, are there holes /
      fillets / features, etc.
@@ -29,7 +29,7 @@ Caveats:
 
 Environment:
   GEMINI_API_KEY        required (or GOOGLE_API_KEY)
-  GEMINI_VISION_MODEL   optional; defaults to 'gemini-3.5-flash'
+  GEMINI_VISION_MODEL   optional; defaults to 'gemini-flash-latest'
   GEMINI_API_KEY        required (used for both passes)
 
 Usage:
@@ -152,7 +152,7 @@ def _call_vision(image_path: str, scale_hint: str = "") -> VisionExtraction:
             error="GEMINI_API_KEY (or GOOGLE_API_KEY) not set",
         )
 
-    model = os.environ.get("GEMINI_VISION_MODEL", "gemini-3.5-flash")
+    model = os.environ.get("GEMINI_VISION_MODEL", "gemini-flash-latest")
 
     if not os.path.isfile(image_path):
         return VisionExtraction(

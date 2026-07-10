@@ -12,7 +12,7 @@ immediately.
 
 Environment variables:
   GEMINI_API_KEY (or GOOGLE_API_KEY)   required
-  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-3.5-flash'
+  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-flash-latest'
 """
 import os
 import sys
@@ -148,7 +148,7 @@ The code must end with `_part = ...` (the final assignment).
 def call_llm(geometry_text, previous_attempt=""):
     """Call the configured codegen LLM (Gemini Flash). Returns (code, error).
 
-    Uses gemini-3.5-flash by default. Override with
+    Uses gemini-flash-latest by default. Override with
     GEMINI_CODEGEN_MODEL env var.
     """
     prompt = PROMPT_TEMPLATE.format(

@@ -7,7 +7,7 @@ Single source of truth for all LLM-driven build123d code generation:
   - builder.py add_feature (modify existing part)
 
 Backend: Google Gemini via the google-genai SDK.
-Default model: gemini-3.5-flash. Override with GEMINI_CODEGEN_MODEL.
+Default model: gemini-flash-latest. Override with GEMINI_CODEGEN_MODEL.
 
 Why one shared helper: keeps the SDK call shape, error handling,
 markdown-fence stripping, and retry semantics identical everywhere.
@@ -15,7 +15,7 @@ Swap the backend in ONE place if needed.
 
 Environment:
   GEMINI_API_KEY (or GOOGLE_API_KEY)   required for production
-  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-3.5-flash'
+  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-flash-latest'
   LLM_BACKEND                          optional; 'gemini' (default) or 'anthropic'
                                         — 'anthropic' route exists for testing
                                         in environments where the Gemini host is
@@ -66,7 +66,7 @@ def _call_gemini(prompt: str) -> Tuple[Optional[str], Optional[str]]:
     if not api_key:
         return None, "GEMINI_API_KEY (or GOOGLE_API_KEY) not set"
 
-    model = os.environ.get("GEMINI_CODEGEN_MODEL", "gemini-3.5-flash")
+    model = os.environ.get("GEMINI_CODEGEN_MODEL", "gemini-flash-latest")
 
     client = genai.Client(api_key=api_key)
     try:
