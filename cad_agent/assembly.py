@@ -91,11 +91,16 @@ class PartSpec(BaseModel):
 
 class Instance(BaseModel):
     """A placement of a part: rotate (XYZ Euler, degrees, applied first)
-    then translate to `at` (mm, assembly frame)."""
+    then translate to `at` (mm, assembly frame). `mounts` names the part
+    this instance is fixed on/around/through (a gear on its arbor, a
+    hand on its arbor, a sleeve around a shaft): mounted pairs are
+    exempt from the layout pre-flight — their true fit is still
+    verified precisely after generation."""
     model_config = ConfigDict(extra="forbid")
     part: str
     at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotate: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    mounts: Optional[str] = None
 
 
 class CountCheck(BaseModel):
@@ -220,8 +225,12 @@ Rules:
    non-carve instance is checked as a proxy box (gears: their exact tip
    cylinder; LLM parts: their envelope). Two proxies may not overlap
    unless they are a correctly meshed gear pair (center distance =
-   module*(z1+z2)/2) or coaxial stacked wheels — so compute positions
-   numerically, and size envelopes honestly.
+   module*(z1+z2)/2), coaxial stacked wheels, or MOUNTED on each other:
+   any instance fixed on/around/through another part (a gear or hand on
+   its arbor, a sleeve around a shaft) MUST set "mounts": "<part_id>" of
+   that part. Mounted fit is still verified precisely after generation,
+   so size bores to their shafts. Compute all positions numerically and
+   size envelopes honestly.
 8. Output ONLY the JSON object — no markdown fences, no commentary.
 
 JSON schema:
@@ -303,13 +312,20 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
         aabb = (min(p[0] for p in pts), min(p[1] for p in pts),
                 min(p[2] for p in pts), max(p[0] for p in pts),
                 max(p[1] for p in pts), max(p[2] for p in pts))
-        proxies.append((label, g, aabb, _xform(center_local, R, inst.at)))
+        proxies.append((label, g, aabb, _xform(center_local, R, inst.at),
+                        inst))
 
     contact = 2.0                       # ignore adjacency/stacking contact
     for i in range(len(proxies)):
         for j in range(i + 1, len(proxies)):
-            la, ga, a, ca = proxies[i]
-            lb, gb, b, cb = proxies[j]
+            la, ga, a, ca, ia = proxies[i]
+            lb, gb, b, cb, ib = proxies[j]
+            # Mounted pairs (gear on arbor, hand on arbor, sleeve around
+            # shaft) legitimately overlap; precise verification after
+            # generation judges their true fit (bores vs shafts).
+            if (ia.mounts == ib.part or ib.mounts == ia.part
+                    or (ia.mounts is not None and ia.mounts == ib.mounts)):
+                continue
             if not (min(a[3], b[3]) - max(a[0], b[0]) > contact
                     and min(a[4], b[4]) - max(a[1], b[1]) > contact
                     and min(a[5], b[5]) - max(a[2], b[2]) > contact):
@@ -332,8 +348,10 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
                     f"({ga.module} vs {gb.module}) — they cannot mesh")
                 continue
             violations.append(
-                f"layout overlap: {la} and {lb} envelope boxes "
-                f"interpenetrate — move them apart")
+                f"layout overlap: {la} at {tuple(round(v) for v in ia.at)} "
+                f"and {lb} at {tuple(round(v) for v in ib.at)} "
+                f"interpenetrate — move them apart, or set 'mounts' if "
+                f"one is fixed on the other")
     return violations
 
 
@@ -456,18 +474,25 @@ def assemble(
     name: Optional[str] = None,
     output_dir: Union[str, Path] = "./cad_output",
     max_revisions: int = 3,
+    max_layout_revisions: int = 8,
     write_parts: bool = True,
     verbose: bool = False,
 ) -> AssemblyResult:
     """Generate a multi-part assembly from a natural-language spec.
 
-    Runs the plan -> generate -> assemble -> verify -> revise pipeline
-    (see module docstring). Needs an LLM API key, like
-    CADAgent.generate().
+    Two nested loops with very different costs:
 
-    Returns AssemblyResult; result.success is False if no clean assembly
-    emerged within max_revisions planning rounds (the last error is in
-    result.error, per-round details in result.report).
+    - LAYOUT loop (fast, up to max_layout_revisions iterations per build
+      round): plan -> validate -> proxy pre-flight. Each iteration is
+      one planner LLM call plus microseconds of geometry-free checking.
+    - BUILD loop (expensive, up to max_revisions rounds): generate parts
+      in parallel, carve container clearances, verify precisely with
+      boolean intersections. A build failure sends feedback back into
+      the layout loop.
+
+    Needs an LLM API key, like CADAgent.generate(). Returns
+    AssemblyResult; result.success is False if no clean assembly emerged
+    (last error in result.error, per-round details in result.report).
     """
     if (os.environ.get("CAD_AGENT_BACKEND", "").lower() == "anthropic"):
         os.environ.setdefault("LLM_BACKEND", "anthropic")
@@ -486,39 +511,54 @@ def assemble(
         if verbose:
             print(f"[cad_agent.assembly] {msg}", file=sys.stderr)
 
+    def _revise(round_tag: str, problem: str, raw: str) -> str:
+        _say(f"  revising ({round_tag}): {problem[:200]}")
+        result.report.append(f"{round_tag}: {problem[:500]}")
+        return (f"\nYOUR PREVIOUS PLAN FAILED:\n{problem[:2500]}\n\n"
+                f"Previous JSON (truncated):\n{raw[:2500]}\n\n"
+                f"Fix these problems and output the corrected plan.\n")
+
+    def _plan_layout(build_round: int):
+        """Fast inner loop: planner call + proxy pre-flight, no geometry."""
+        nonlocal feedback, last_error
+        import time
+        t0 = time.time()
+        for it in range(1, max_layout_revisions + 1):
+            _say(f"layout iteration {it}/{max_layout_revisions} "
+                 f"(build round {build_round})")
+            raw, err = _call_planner(_PLAN_PROMPT.format(
+                schema=schema_json, spec=spec, feedback=feedback))
+            if raw is None:
+                last_error = f"LLM call failed: {err}"
+                return None
+            tag = f"build {build_round} / layout {it}"
+            try:
+                plan = AssemblyPlan.model_validate_json(raw)
+            except ValidationError as e:
+                last_error = f"plan validation failed: {e}"
+                feedback = _revise(tag, last_error, raw)
+                continue
+            viols = _preflight(plan)
+            if not viols:
+                _say(f"layout clean after {it} iteration(s), "
+                     f"{time.time() - t0:.0f}s")
+                return plan, raw
+            last_error = ("layout pre-flight failed (proxy boxes, no "
+                          "geometry generated): " + "; ".join(viols[:8]))
+            feedback = _revise(tag, last_error, raw)
+        return None
+
     for round_no in range(1, max_revisions + 1):
-        _say(f"planning round {round_no}/{max_revisions}")
-        raw, err = _call_planner(_PLAN_PROMPT.format(
-            schema=schema_json, spec=spec, feedback=feedback))
-        if raw is None:
-            result.error = f"LLM call failed: {err}"
+        planned = _plan_layout(round_no)
+        if planned is None:
+            result.error = (f"no pre-flight-clean layout within "
+                            f"{max_layout_revisions} layout iterations "
+                            f"(build round {round_no}); last: {last_error}")
             return result
-
-        def _revise(problem: str) -> str:
-            _say(f"  revising plan: {problem[:200]}")
-            result.report.append(f"round {round_no}: {problem[:500]}")
-            return (f"\nYOUR PREVIOUS PLAN FAILED:\n{problem[:2500]}\n\n"
-                    f"Previous JSON (truncated):\n{raw[:2500]}\n\n"
-                    f"Fix these problems and output the corrected plan.\n")
-
-        try:
-            plan = AssemblyPlan.model_validate_json(raw)
-        except ValidationError as e:
-            last_error = f"plan validation failed: {e}"
-            feedback = _revise(last_error)
-            continue
+        plan, raw = planned
         _say(f"plan '{plan.name}': {len(plan.parts)} parts, "
              f"{len(plan.instances)} instances")
-
-        # --- soft layout pre-flight (no geometry generated yet) --------
-        layout_violations = _preflight(plan)
-        if layout_violations:
-            last_error = ("layout pre-flight failed (checked with proxy "
-                          "envelope boxes before generating any geometry): "
-                          + "; ".join(layout_violations[:8]))
-            feedback = _revise(last_error)
-            continue
-        _say("layout pre-flight clean")
+        tag = f"build {round_no}"
 
         # --- generate unique parts (parallel: independent LLM calls) --
         import time
@@ -554,11 +594,12 @@ def assemble(
                 pass
         measured = ("MEASURED PART SIZES (local frames, use these for "
                     "placement):\n  " + "\n  ".join(sizes)) if sizes else ""
+
         if part_errors:
             last_error = ("some parts could not be generated: "
                           + "; ".join(part_errors[:4])
                           + ". Simplify or re-envelope those parts.")
-            feedback = _revise(last_error)
+            feedback = _revise(tag, last_error, raw)
             continue
 
         # --- place instances ------------------------------------------
@@ -572,9 +613,6 @@ def assemble(
                            inst.part in carve_ids])
 
         # --- carve container clearances --------------------------------
-        # Contents win: subtract every non-carve instance from each
-        # carve-marked container it overlaps, so interior fit cannot
-        # fail on guessed cavity geometry.
         if carve_ids:
             n_carved = 0
             for entry in placed:
@@ -592,13 +630,13 @@ def assemble(
                  f"out of {len(carve_ids)} container part(s)")
         placed = [(label, solid) for label, solid, _ in placed]
 
-        # --- verify ----------------------------------------------------
+        # --- verify precisely -------------------------------------------
         violations = _verify_assembly(plan, placed, verbose=verbose)
         if violations:
             last_error = ("assembly verification failed: "
                           + "; ".join(violations[:6])
                           + ("\n" + measured if measured else ""))
-            feedback = _revise(last_error)
+            feedback = _revise(tag, last_error, raw)
             continue
 
         # --- export ----------------------------------------------------
@@ -634,6 +672,6 @@ def assemble(
         _say(f"assembly verified clean: {len(placed)} instances")
         return result
 
-    result.error = (f"no clean assembly after {max_revisions} planning "
+    result.error = (f"no clean assembly after {max_revisions} build "
                     f"rounds; last: {last_error}")
     return result

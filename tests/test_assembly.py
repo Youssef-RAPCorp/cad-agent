@@ -203,13 +203,54 @@ def test_envelope_violation_feeds_back(tmp_path, mock_planner, monkeypatch):
     assert "exceeds its envelope in any orientation" in calls["prompts"][1]
 
 
-def test_exhausts_revisions(tmp_path, mock_planner, mock_codegen):
+def test_exhausts_layout_revisions_fast(tmp_path, mock_planner, mock_codegen):
+    """A never-clean layout burns only cheap planner iterations — the
+    expensive build phase is never entered."""
     calls = mock_planner(OVERLAP_PLAN)
-    result = assemble("gearbox", output_dir=tmp_path, max_revisions=2)
+    result = assemble("gearbox", output_dir=tmp_path,
+                      max_layout_revisions=3)
     assert not result.success
-    assert calls["n"] == 2
-    assert "no clean assembly after 2" in result.error
+    assert calls["n"] == 3
+    assert "no pre-flight-clean layout within 3" in result.error
     assert not result  # __bool__
+
+
+def test_mounted_parts_exempt_from_preflight(tmp_path, mock_planner,
+                                             monkeypatch):
+    """A gear mounted on its arbor overlaps the arbor's envelope by
+    definition — 'mounts' exempts the pair in pre-flight, and the
+    precise check passes because the arbor fits through the bore."""
+    plan = {
+        "name": "gear on arbor",
+        "parts": [
+            {"id": "arbor", "description": "a steel rod 3.6mm dia x 40mm",
+             "envelope": [4, 4, 40]},
+            {"id": "gear_z24", "primitive": {"kind": "involute_gear",
+                                             "module": 1.0, "teeth": 24,
+                                             "thickness": 4.0, "bore": 4.0}},
+        ],
+        "instances": [
+            {"part": "arbor", "at": [0, 0, -18]},
+            {"part": "gear_z24", "at": [0, 0, 0], "mounts": "arbor"},
+        ],
+    }
+    from build123d import Cylinder
+    def rod(desc, extra_constraints="", **kw):
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 20) * Cylinder(1.8, 40), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", rod)
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("gear on arbor", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+
+    # Without mounts the same layout is rejected at pre-flight.
+    plan["instances"][1].pop("mounts")
+    calls2 = mock_planner(json.dumps(plan))
+    result2 = assemble("gear on arbor", output_dir=tmp_path,
+                       max_layout_revisions=2)
+    assert not result2.success
+    assert "mounts" in calls2["prompts"][1]
 
 
 def test_carve_gives_contents_clearance(tmp_path, mock_planner, monkeypatch):
