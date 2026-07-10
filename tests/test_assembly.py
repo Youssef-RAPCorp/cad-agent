@@ -130,6 +130,24 @@ def test_invalid_plan_json_revised(tmp_path, mock_planner, mock_codegen):
     assert "plan validation failed" in calls["prompts"][1]
 
 
+def test_envelope_is_orientation_agnostic(tmp_path, mock_planner, monkeypatch):
+    """A plate modeled flat (110x140x3) must pass a standing envelope
+    (160x3x160) — instances rotate parts, so only sorted dimensions
+    matter. This was a real failure mode: same plate, wasted revisions."""
+    plan = json.loads(GOOD_PLAN)
+    plan["parts"][1]["envelope"] = [160, 3, 160]
+    def flat_plate(desc, extra_constraints="", **kw):
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 1.5) * Box(110, 140, 3), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", flat_plate)
+    # keep the plate clear of the gears
+    plan["instances"][2]["at"] = [12, 0, -10]
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("gearbox", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+
+
 def test_envelope_violation_feeds_back(tmp_path, mock_planner, monkeypatch):
     """An LLM part that busts its bounding-box budget is rejected and the
     failure reaches the planner."""
@@ -141,7 +159,7 @@ def test_envelope_violation_feeds_back(tmp_path, mock_planner, monkeypatch):
     result = assemble("gearbox", output_dir=tmp_path, max_revisions=2)
     assert not result.success
     assert calls["n"] == 2
-    assert "exceeds its envelope" in calls["prompts"][1]
+    assert "exceeds its envelope in any orientation" in calls["prompts"][1]
 
 
 def test_exhausts_revisions(tmp_path, mock_planner, mock_codegen):

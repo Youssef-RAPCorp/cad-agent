@@ -202,7 +202,12 @@ Rules:
    parts so patterns work (gear_z36, gear_z12, ...).
 5. Prefer FEWER, LARGER LLM parts (a case as one part, not 12 panels);
    use many instances of few gear primitives for trains.
-6. Output ONLY the JSON object — no markdown fences, no commentary.
+6. CONTAINERS: any case/housing that other parts sit INSIDE must be
+   described as a HOLLOW shell with explicit wall thickness and
+   openings ("four 15mm walls, hollow interior, open front") — a solid
+   container collides with its contents and fails verification.
+   Interior parts must clear the container walls by >= 5mm.
+7. Output ONLY the JSON object — no markdown fences, no commentary.
 
 JSON schema:
 {schema}
@@ -253,11 +258,14 @@ def _build_part(part: PartSpec, cache: Dict[str, object], verbose: bool):
             continue
         bb = gen.part.bounding_box()
         size = (bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
-        # 15% tolerance on the envelope budget.
-        if all(s <= e * 1.15 + 1e-6 for s, e in zip(size, part.envelope)):
+        # Orientation-agnostic budget: instances rotate parts anyway, so
+        # compare SORTED dimensions with 15% tolerance (a plate modeled
+        # flat still passes a standing envelope).
+        if all(s <= e * 1.15 + 1e-6
+               for s, e in zip(sorted(size), sorted(part.envelope))):
             cache[key] = gen.part
             return gen.part, None
-        err = (f"part exceeds its envelope: measured "
+        err = (f"part exceeds its envelope in any orientation: measured "
                f"{size[0]:.0f}x{size[1]:.0f}x{size[2]:.0f} vs budget "
                f"{ex:g}x{ey:g}x{ez:g}")
         constraints += (f"\nYOUR PREVIOUS ATTEMPT WAS TOO BIG "
@@ -386,15 +394,20 @@ def assemble(
         _say(f"plan '{plan.name}': {len(plan.parts)} parts, "
              f"{len(plan.instances)} instances")
 
-        # --- generate unique parts -----------------------------------
+        # --- generate unique parts (parallel: independent LLM calls) --
+        from concurrent.futures import ThreadPoolExecutor
+        workers = max(1, int(os.environ.get("CAD_AGENT_PARALLEL", "4")))
         solids: Dict[str, object] = {}
         part_errors: List[str] = []
-        for part in plan.parts:
-            solid, perr = _build_part(part, cache, verbose)
-            if solid is None:
-                part_errors.append(perr)
-            else:
-                solids[part.id] = solid
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [(part, pool.submit(_build_part, part, cache, verbose))
+                       for part in plan.parts]
+            for part, fut in futures:
+                solid, perr = fut.result()
+                if solid is None:
+                    part_errors.append(perr)
+                else:
+                    solids[part.id] = solid
         if part_errors:
             last_error = ("some parts could not be generated: "
                           + "; ".join(part_errors[:4])
