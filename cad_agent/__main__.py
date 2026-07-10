@@ -38,7 +38,36 @@ def main(argv=None) -> int:
                    help="Also produce a multi-view drawing sheet (DXF + "
                         "PNG) of the generated model (requires the "
                         "drawings extras)")
+    p.add_argument("--assembly", action="store_true",
+                   help="Multi-part orchestration: decompose the spec "
+                        "into parts, generate each separately (gears as "
+                        "exact primitives), place them, and verify the "
+                        "assembly for interference before export")
     args = p.parse_args(argv)
+
+    if args.assembly:
+        from .assembly import assemble
+        result = assemble(
+            args.spec,
+            name=args.name,
+            output_dir=Path(args.output),
+            max_revisions=args.max_revisions,
+            verbose=args.verbose,
+        )
+        print(result.summary())
+        if result.success and args.view and result.stl_path:
+            from .viewer import view
+            try:
+                print(f"viewer: {view(result.stl_path)}")
+            except ImportError as exc:
+                print(f"could not open viewer: {exc}", file=sys.stderr)
+        if result.success and args.draw and result.stl_path:
+            try:
+                from .drawings import draw_multiview
+                print(draw_multiview(result.stl_path).summary())
+            except ImportError as exc:
+                print(f"could not draw sheet: {exc}", file=sys.stderr)
+        return 0 if result.success else 1
 
     cfg = CADAgentConfig.from_env(
         output_dir=Path(args.output),

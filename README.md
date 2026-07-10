@@ -164,6 +164,21 @@ for name, spec in specs:
 
 ---
 
+## Multi-part assemblies
+
+Single-script generation cannot reliably produce a 40-part mechanism. `--assembly` runs a plan → generate → assemble → verify → revise pipeline instead:
+
+```bash
+cad-agent --assembly "A grandfather clock movement with 30-50 accurate cogs, \
+a movement box, seat board, pendulum and two drive weights" --name clockwork -v
+```
+
+The LLM decomposes the spec into unique parts and placed instances (a validated JSON plan). **Gears are declared as parametric primitives and built by exact involute math — never LLM geometry.** Every other part gets its own focused codegen call with a bounding-box budget it must fit. Trusted code places the instances, then the assembly is verified: pairwise interference via boolean intersection, plus plan-declared checks (`30 ≤ count(gear_*) ≤ 50`). Violations go back to the planner with numbers, for up to `--max-revisions` rounds. Output: merged STEP/STL, per-part STLs, and the plan JSON (a bill of materials).
+
+From Python: `from cad_agent.assembly import assemble; result = assemble("...")`.
+
+---
+
 ## 2D engineering drawings
 
 `cad_agent.drawings` turns models into production-style drawing sheets — ASME/ISO-style DXF with title blocks, revision blocks, dimensions, leaders, and **collision-aware annotation placement** (every label and dim is placed by a ring search against the ink footprint of everything else on the sheet).
