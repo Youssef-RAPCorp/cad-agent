@@ -244,13 +244,22 @@ def test_mounted_parts_exempt_from_preflight(tmp_path, mock_planner,
     assert result.success, result.error
     assert calls["n"] == 1
 
-    # Without mounts the same layout is rejected at pre-flight.
+    # Without declared mounts the slender arbor is AUTO-mounted (a gear
+    # overlapping a shaft-like part is riding it by definition).
     plan["instances"][1].pop("mounts")
     calls2 = mock_planner(json.dumps(plan))
-    result2 = assemble("gear on arbor", output_dir=tmp_path,
+    result2 = assemble("gear on arbor", output_dir=tmp_path)
+    assert result2.success, result2.error
+    assert calls2["n"] == 1
+
+    # A NON-slender undeclared overlap is still rejected at pre-flight.
+    plan["parts"][0]["envelope"] = [40, 40, 40]
+    plan["parts"][0]["description"] = "a block 40x40x40mm"
+    calls3 = mock_planner(json.dumps(plan))
+    result3 = assemble("gear on block", output_dir=tmp_path,
                        max_layout_revisions=2)
-    assert not result2.success
-    assert "mounts" in calls2["prompts"][1]
+    assert not result3.success
+    assert "mounts" in calls3["prompts"][1]
 
 
 def test_carve_gives_contents_clearance(tmp_path, mock_planner, monkeypatch):

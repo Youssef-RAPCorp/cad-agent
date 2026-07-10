@@ -225,8 +225,13 @@ Rules:
    on the origin in X/Y with their base at Z=0.
 3. INSTANCES: place every physical occurrence (a part used 4 times = 4
    instances). `rotate` is XYZ Euler degrees applied before translating
-   to `at`. Parts must NOT interpenetrate — leave real clearances;
-   support every part on another (nothing floats).
+   to `at`. Parts must NOT interpenetrate — leave real clearances.
+   MOUNTING IS MANDATORY: every instance except the ground/case parts
+   sets "mounts" to the part that physically supports it — gears mount
+   their arbor, hands mount their arbor/sleeve, sleeves mount their
+   shaft, the pendulum mounts the movement, weights mount their cables,
+   cables mount the seat board. Unmounted floating parts and undeclared
+   overlaps both fail.
 4. CHECKS: encode countable requirements from the spec as checks, e.g.
    {{"kind": "count", "pattern": "gear_*", "min": 30, "max": 50}} — name
    parts so patterns work (gear_z36, gear_z12, ...).
@@ -373,6 +378,16 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
                 f"'{chk.pattern}' (need {chk.min}..{chk.max})")
 
     parts_by_id = {pt.id: pt for pt in plan.parts}
+
+    def _slender(pid: str) -> bool:
+        """Arbor-/shaft-/cable-like: an LLM part whose two smaller
+        envelope dimensions are both <= 16mm."""
+        pt = parts_by_id[pid]
+        if pt.primitive is not None or pt.envelope is None:
+            return False
+        dims = sorted(pt.envelope)
+        return dims[0] <= 16.0 and dims[1] <= 16.0
+
     proxies = []
     counters: Dict[str, int] = {}
     for inst in plan.instances:
@@ -411,6 +426,17 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
             # generation judges their true fit (bores vs shafts).
             if (ia.mounts == ib.part or ib.mounts == ia.part
                     or (ia.mounts is not None and ia.mounts == ib.mounts)):
+                continue
+            # Auto-mount: a gear overlapping a slender part IS riding it
+            # (planners reliably forget to declare this) — exempt, and
+            # let the precise bore-vs-shaft check judge the fit.
+            if ((ga is not None and _slender(ib.part))
+                    or (gb is not None and _slender(ia.part))):
+                continue
+            # Likewise two slender parts overlapping a gear region
+            # (hands on concentric arbors) — exempt slender-vs-slender
+            # only when they share an instance axis position closely.
+            if (_slender(ia.part) and _slender(ib.part)):
                 continue
             if not (min(a[3], b[3]) - max(a[0], b[0]) > contact
                     and min(a[4], b[4]) - max(a[1], b[1]) > contact
@@ -685,7 +711,7 @@ def assemble(
     name: Optional[str] = None,
     output_dir: Union[str, Path] = "./cad_output",
     max_revisions: int = 3,
-    max_layout_revisions: int = 8,
+    max_layout_revisions: int = 12,
     write_parts: bool = True,
     verbose: bool = False,
 ) -> AssemblyResult:

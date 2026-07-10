@@ -38,9 +38,9 @@ def main(argv=None) -> int:
                    help="Also produce a multi-view drawing sheet (DXF + "
                         "PNG) of the generated model (requires the "
                         "drawings extras)")
-    p.add_argument("--max-layout-revisions", type=int, default=8,
+    p.add_argument("--max-layout-revisions", type=int, default=12,
                    help="Fast layout-planning iterations per build round "
-                        "for --assembly (default: 8)")
+                        "for --assembly (default: 12)")
     p.add_argument("--assembly", action="store_true",
                    help="Multi-part orchestration: decompose the spec "
                         "into parts, generate each separately (gears as "
