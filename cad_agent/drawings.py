@@ -160,6 +160,7 @@ def draw_multiview(
     revisions: Optional[List[RevisionEntry]] = None,
     spacing: float = 25.0,
     dimensions: bool = True,
+    hidden: bool = True,
     preview: bool = True,
     dpi: int = 180,
 ) -> SheetResult:
@@ -189,6 +190,11 @@ def draw_multiview(
         dimensions: add overall dimensions — width and height on the
               front view, depth on the top view. The dim text shows the
               true model size in mm (not the scaled sheet distance).
+        hidden: draw occluded edges dashed (ASME hidden lines) on the
+              orthographic views. The isometric never shows hidden
+              lines. Either way, occluded edges are removed from the
+              solid linework — views are true hidden-line-removed
+              projections, not wireframes.
         preview: also render a paperspace PNG of the sheet.
         dpi: preview resolution.
 
@@ -340,11 +346,14 @@ def draw_multiview(
         revisions=revisions or [],
         entities=[
             Mesh3DView(id="V_FRONT", path=str(stl_path), view="front",
-                       origin=front_c, scale=scale, label="FRONT VIEW"),
+                       origin=front_c, scale=scale, label="FRONT VIEW",
+                       show_hidden=hidden),
             Mesh3DView(id="V_TOP", path=str(stl_path), view="top",
-                       origin=top_c, scale=scale, label="TOP VIEW"),
+                       origin=top_c, scale=scale, label="TOP VIEW",
+                       show_hidden=hidden),
             Mesh3DView(id="V_RIGHT", path=str(stl_path), view="right",
-                       origin=right_c, scale=scale, label="RIGHT VIEW"),
+                       origin=right_c, scale=scale, label="RIGHT VIEW",
+                       show_hidden=hidden),
             Mesh3DView(id="V_ISO", path=str(stl_path), view="iso",
                        origin=iso_c, scale=iso_scale, label="ISOMETRIC"),
         ],

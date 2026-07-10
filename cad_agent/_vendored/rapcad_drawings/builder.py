@@ -256,19 +256,26 @@ class DrawingBuilder:
         vcx, vcy = view.center
         ox, oy = ent.origin
         sc = ent.scale
-        layer = ent.layer
+
+        # Visible edges on the entity's layer; hidden edges (when
+        # requested) on the dashed hidden layer with their own sub-id
+        # namespace (__h) so the spatial index keys stay unique.
+        passes = [(view.edges_2d, ent.layer, "e")]
+        if ent.show_hidden and view.hidden_edges_2d:
+            passes.append((view.hidden_edges_2d, ent.hidden_layer, "h"))
 
         all_pts: list = []
-        for i, ((x0, y0), (x1, y1)) in enumerate(view.edges_2d):
-            # Translate to origin, scale around new origin
-            p0 = (ox + (x0 - vcx) * sc, oy + (y0 - vcy) * sc)
-            p1 = (ox + (x1 - vcx) * sc, oy + (y1 - vcy) * sc)
-            self.msp.add_line(p0, p1, dxfattribs={"layer": layer})
-            sub_id = f"{ent.id}__e{i}"
-            ge = GeomEntity(entity_id=sub_id, kind="line", points=[p0, p1])
-            ge.aabb = AABB.from_points([p0, p1])
-            self.index.add(ge)
-            all_pts.extend([p0, p1])
+        for edge_list, layer, prefix in passes:
+            for i, ((x0, y0), (x1, y1)) in enumerate(edge_list):
+                # Translate to origin, scale around new origin
+                p0 = (ox + (x0 - vcx) * sc, oy + (y0 - vcy) * sc)
+                p1 = (ox + (x1 - vcx) * sc, oy + (y1 - vcy) * sc)
+                self.msp.add_line(p0, p1, dxfattribs={"layer": layer})
+                sub_id = f"{ent.id}__{prefix}{i}"
+                ge = GeomEntity(entity_id=sub_id, kind="line", points=[p0, p1])
+                ge.aabb = AABB.from_points([p0, p1])
+                self.index.add(ge)
+                all_pts.extend([p0, p1])
 
         # Register a parent entity covering the whole view's bounds.
         # This lets annotations target the view as a whole (e.g. a label

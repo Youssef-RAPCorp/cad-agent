@@ -147,6 +147,8 @@ class Mesh3DView(_EntityBase):
     origin: Tuple[float, float] = (0.0, 0.0)         # placement origin
     scale:  float = 1.0
     angle_threshold_deg: float = 30.0                # feature-edge cutoff
+    show_hidden: bool = False                        # occluded edges, dashed
+    hidden_layer: str = "HIDDEN"                     # layer for hidden edges
     label:  Optional[str] = None                     # text below the view
     label_height: Optional[float] = None             # else default_text_height * 1.4
     label_offset: float = 6.0                        # mm gap below the view

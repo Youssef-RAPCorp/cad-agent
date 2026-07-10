@@ -174,7 +174,7 @@ pip install -e ".[drawings]"       # from the repo root
 
 No API key needed — the drawing engine is pure geometry, and also works standalone on any existing STL/OBJ/PLY/GLB file.
 
-One call goes from a generated model to a third-angle multi-view sheet (FRONT, TOP, RIGHT, ISO) with an auto-fit ISO 5455 scale:
+One call goes from a generated model to a third-angle multi-view sheet (FRONT, TOP, RIGHT, ISO) with an auto-fit ISO 5455 scale. Views are true **hidden-line-removed** projections (depth-buffer occlusion testing): visible edges solid, occluded edges dashed per ASME Y14.2 (`hidden=False` omits them), and the isometric renders as an opaque object:
 
 ```python
 from cad_agent import CADAgent

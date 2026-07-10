@@ -46,6 +46,8 @@ def main(argv=None) -> int:
                    help="LLM retry budget for description mode (default: 3)")
     p.add_argument("--no-dims", action="store_true",
                    help="Skip the overall dimensions on multi-view sheets")
+    p.add_argument("--no-hidden", action="store_true",
+                   help="Omit dashed hidden lines on multi-view sheets")
     p.add_argument("--no-preview", action="store_true",
                    help="Skip the PNG preview, write only the DXF")
     p.add_argument("--verbose", "-v", action="store_true")
@@ -79,6 +81,7 @@ def main(argv=None) -> int:
                 sheet=args.sheet,
                 scale=args.scale,
                 dimensions=not args.no_dims,
+                hidden=not args.no_hidden,
                 preview=not args.no_preview,
             )
         else:
