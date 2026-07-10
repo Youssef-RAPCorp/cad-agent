@@ -57,6 +57,21 @@ Hard requirements:
 8. Use Algebra mode (with `+`, `-`, `&`, and `*` for placement). Do NOT
    mix in Builder mode (`with BuildPart() as p:`) unless absolutely
    required for an operation algebra mode cannot express.
+9. PRECISION PARTS: a mathematically accurate gear helper is already in
+   scope (do NOT define or import it):
+       involute_gear(module, teeth, thickness=5.0, bore=0.0,
+                     pressure_angle=20.0) -> Part
+   It returns a true involute spur gear, axis +Z, extruded z=0..thickness,
+   tip diameter = module*(teeth+2). ALWAYS use it for gears/cogs — never
+   hand-model teeth. MESHING RULE: two meshing gears share the same
+   module and their center distance MUST equal module*(teeth1+teeth2)/2;
+   lay out gear trains by computing shaft positions from that rule.
+   PHASING RULE: also rotate one gear of each meshing pair about its own
+   axis so teeth align with the mate's tooth spaces (a half tooth pitch,
+   Rot(0, 0, 180/teeth), is the usual correction) — unphased gears
+   collide tooth-on-tooth. Gears on the SAME shaft never touch gears on
+   another shaft unless meshing; keep non-meshing gears' tip circles
+   clear of each other.
 
 Reference material (the canonical idioms, common patterns, and known
 mistakes — follow this guide):
@@ -164,6 +179,10 @@ def _execute_code(code: str) -> tuple[Optional[object], Optional[str]]:
     }
 
     ns = {"__builtins__": safe_builtins}
+    # Deterministic precision-part helpers (accurate involute gears
+    # etc.) — generated code calls these instead of hand-modeling.
+    from .stdparts import SANDBOX_HELPERS
+    ns.update(SANDBOX_HELPERS)
     try:
         exec(code, ns, ns)
     except Exception:
