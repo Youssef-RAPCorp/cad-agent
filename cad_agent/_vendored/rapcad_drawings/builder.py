@@ -251,18 +251,37 @@ class DrawingBuilder:
                 f"mesh3d_view {ent.id}: no edges produced for view '{ent.view}'")
             return
 
-        # Translate the view so its bounding-box center sits at the
-        # requested origin, then scale.
-        vcx, vcy = view.center
+        # Detail (zoom) views: crop the projection to the requested
+        # window, given in model mm from the view's lower-left corner.
+        vis_edges = view.edges_2d
+        hid_edges = view.hidden_edges_2d
+        if ent.region is not None:
+            from .model3d import clip_segments_to_rect
+            bx0, by0 = view.bounds_2d[0], view.bounds_2d[1]
+            r = ent.region
+            rect = (bx0 + min(r[0], r[2]), by0 + min(r[1], r[3]),
+                    bx0 + max(r[0], r[2]), by0 + max(r[1], r[3]))
+            vis_edges = clip_segments_to_rect(vis_edges, rect)
+            hid_edges = clip_segments_to_rect(hid_edges, rect)
+            if not vis_edges and not hid_edges:
+                self.report.warnings.append(
+                    f"mesh3d_view {ent.id}: region crop left no edges")
+                return
+            vcx = (rect[0] + rect[2]) / 2
+            vcy = (rect[1] + rect[3]) / 2
+        else:
+            # Translate the view so its bounding-box center sits at the
+            # requested origin, then scale.
+            vcx, vcy = view.center
         ox, oy = ent.origin
         sc = ent.scale
 
         # Visible edges on the entity's layer; hidden edges (when
         # requested) on the dashed hidden layer with their own sub-id
         # namespace (__h) so the spatial index keys stay unique.
-        passes = [(view.edges_2d, ent.layer, "e")]
-        if ent.show_hidden and view.hidden_edges_2d:
-            passes.append((view.hidden_edges_2d, ent.hidden_layer, "h"))
+        passes = [(vis_edges, ent.layer, "e")]
+        if ent.show_hidden and hid_edges:
+            passes.append((hid_edges, ent.hidden_layer, "h"))
 
         all_pts: list = []
         for edge_list, layer, prefix in passes:
@@ -276,6 +295,23 @@ class DrawingBuilder:
                 ge.aabb = AABB.from_points([p0, p1])
                 self.index.add(ge)
                 all_pts.extend([p0, p1])
+
+        # Detail boundary: a thin circle ringing the cropped view, per
+        # drafting convention for detail callouts.
+        if ent.frame and all_pts:
+            fx0 = min(p[0] for p in all_pts); fx1 = max(p[0] for p in all_pts)
+            fy0 = min(p[1] for p in all_pts); fy1 = max(p[1] for p in all_pts)
+            rad = math.hypot(fx1 - fx0, fy1 - fy0) / 2.0 + 3.0
+            self.msp.add_circle((ox, oy), rad,
+                                dxfattribs={"layer": ent.layer})
+            ring = [(ox + rad * math.cos(2 * math.pi * k / 16),
+                     oy + rad * math.sin(2 * math.pi * k / 16))
+                    for k in range(16)]
+            ge = GeomEntity(entity_id=f"{ent.id}__frame", kind="polyline",
+                            points=ring, closed=True)
+            ge.aabb = AABB.from_points(ring)
+            self.index.add(ge)
+            all_pts.extend([(ox - rad, oy - rad), (ox + rad, oy + rad)])
 
         # Register a parent entity covering the whole view's bounds.
         # This lets annotations target the view as a whole (e.g. a label

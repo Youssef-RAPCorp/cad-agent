@@ -635,6 +635,45 @@ def project_file(path: str,
                         source_path=path)
 
 
+def clip_segments_to_rect(segments, rect):
+    """Clip 2D segments to an axis-aligned rectangle (Liang-Barsky).
+
+    ``rect`` is (xmin, ymin, xmax, ymax). Segments fully outside are
+    dropped; crossing segments are shortened to the window. Used for
+    detail (zoom) views that show only a region of a projection.
+    """
+    x0r, y0r, x1r, y1r = rect
+    out = []
+    for (ax, ay), (bx, by) in segments:
+        dx, dy = bx - ax, by - ay
+        t0, t1 = 0.0, 1.0
+        ok = True
+        for p, q in ((-dx, ax - x0r), (dx, x1r - ax),
+                     (-dy, ay - y0r), (dy, y1r - ay)):
+            if abs(p) < 1e-12:
+                if q < 0:
+                    ok = False
+                    break
+            else:
+                t = q / p
+                if p < 0:
+                    if t > t1:
+                        ok = False
+                        break
+                    if t > t0:
+                        t0 = t
+                else:
+                    if t < t0:
+                        ok = False
+                        break
+                    if t < t1:
+                        t1 = t
+        if ok and t1 > t0:
+            out.append(((ax + t0 * dx, ay + t0 * dy),
+                        (ax + t1 * dx, ay + t1 * dy)))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Multi-view layout helper
 # ---------------------------------------------------------------------------

@@ -100,11 +100,18 @@ def main(argv=None) -> int:
             dimensions=not args.no_dims,
             hidden=not args.no_hidden,
             preview=not args.no_preview,
+            verbose=args.verbose,
         )
 
     try:
         if is_model:
             use_smart = args.smart or (not args.basic and _llm_key_available())
+            if args.verbose:
+                why = ("--smart" if args.smart else "--basic" if args.basic
+                       else "API key found" if use_smart else "no API key")
+                print(f"[cad-agent-draw] mode: "
+                      f"{'smart LLM draft' if use_smart else 'basic multi-view'}"
+                      f" ({why})", file=sys.stderr)
             if use_smart:
                 try:
                     sheet = draft_drawing(

@@ -198,6 +198,7 @@ def draw_multiview(
     hidden: bool = True,
     preview: bool = True,
     dpi: int = 180,
+    verbose: bool = False,
 ) -> SheetResult:
     """Produce a third-angle multi-view drawing sheet from a 3D model.
 
@@ -232,16 +233,25 @@ def draw_multiview(
               projections, not wireframes.
         preview: also render a paperspace PNG of the sheet.
         dpi: preview resolution.
+        verbose: print pipeline stages to stderr.
 
     Returns:
         SheetResult — see its docstring. `result.spec` holds the built
         DrawingSpec; edit `spec.annotations` and rebuild with
         DrawingBuilder for dimensioned sheets.
     """
+    import sys
+
     stl_path, name, outdir = _resolve_model(source, name, output_dir)
 
     if sheet is not None and sheet not in SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
+
+    def _say(msg):
+        if verbose:
+            print(f"[cad_agent.drawings] {msg}", file=sys.stderr)
+
+    _say(f"model: {stl_path}")
 
     # --- Project the three orthographic views to size the layout ----
     # (model3d lazily imports trimesh and raises a helpful error if
@@ -249,6 +259,8 @@ def draw_multiview(
     from ._vendored.rapcad_drawings.model3d import load_mesh, project_mesh
 
     mesh = load_mesh(str(stl_path))
+    _say(f"mesh loaded: {len(mesh.faces)} triangles, "
+         f"{mesh.body_count} bodies")
     front = project_mesh(mesh, view="front", source_path=str(stl_path))
     top = project_mesh(mesh, view="top", source_path=str(stl_path))
     right = project_mesh(mesh, view="right", source_path=str(stl_path))
@@ -304,6 +316,13 @@ def draw_multiview(
     bx = sh.border_left + max((usable_w - total_w) / 2.0, 0.0)
     by = (sh.border_bottom + _TITLE_BLOCK_RESERVE
           + max((usable_h - total_h) / 2.0, 0.0))
+
+    _say(f"projected views (hidden-line removed): "
+         f"front {front.width:.1f}x{front.height:.1f}, "
+         f"top {top.width:.1f}x{top.height:.1f}, "
+         f"right {right.width:.1f}x{right.height:.1f} mm")
+    _say(f"sheet {sheet} at {_scale_label(scale)}"
+         + (" (auto)" if scale else ""))
 
     front_c = (bx + fw / 2.0, by + fh / 2.0)
     top_c = (front_c[0], by + fh + spacing + th / 2.0)
@@ -367,17 +386,23 @@ def draw_multiview(
         annotations=annotations,
     )
 
+    _say("building sheet (placing views, dimensions, title block)...")
     builder = DrawingBuilder(spec)
     doc = builder.build()
     findings = validate(builder.index, builder._halo)
+    _say(f"build report: {builder.report}; validator findings: "
+         f"{len(findings)}")
 
     dxf_path = outdir / f"{name}_sheet.dxf"
     builder.save(str(dxf_path))
+    _say(f"wrote DXF: {dxf_path}")
 
     png_path: Optional[Path] = None
     if preview:
         png_path = outdir / f"{name}_sheet.png"
+        _say(f"rendering preview at {dpi} dpi...")
         render_preview(doc, str(png_path), layout="paperspace", dpi=dpi)
+        _say(f"wrote preview: {png_path}")
 
     return SheetResult(
         name=name,
@@ -617,17 +642,40 @@ dimensions to them with Ref targets, e.g.
 IMPORTANT: views are drawn scaled, so every dimension on a mesh3d_view MUST
 set text_override to the true model size in mm (given in the facts).
 
-Design the sheet like a drafter:
+DETAIL (ZOOM) VIEWS — use these for every fine feature worth studying
+(finials, dial/hands, hole groups, joints, moldings): add another
+mesh3d_view of the SAME view direction with:
+- `region`: [x0, y0, x1, y1] — the crop window in model mm measured from
+  that view's LOWER-LEFT corner (view sizes are in the facts; e.g. the
+  top 40mm of a 222mm-tall front view is [0, 182, W, 222])
+- `scale`: 2x-5x the main scale so the detail reads large
+- `frame`: true (draws the standard detail boundary circle)
+- `label`: e.g. "DETAIL A (4:1)"
+Mark the source area on the parent view: a thin `circle` entity (layer
+"VISIBLE") at the feature's sheet position with a `text` label "A"
+targeting it. Compute sheet position as parent_origin + (feature_center
+- view_center) * parent_scale.
+
+Design the sheet like a drafter — PRODUCTION quality, densely annotated:
 1. Choose the views this shape needs (tall parts: front+right+top; flat
-   parts: top+front; always consider one iso at ~0.7x scale in a corner).
+   parts: top+front; always one iso at ~0.7x scale in a corner) PLUS
+   1-3 detail views of the most intricate regions.
 2. Use the suggested sheet/scale/layout from the facts unless you have a
-   reason to deviate. Keep all content inside the border (left 20mm,
-   right 10mm, top 10mm) and above the 70mm title-block band at the bottom.
-3. Dimension the part fully: overall sizes on the views, plus feature
-   callouts (`kind`: "text" with a Ref target on a view id and a leader,
-   e.g. "Ø6.4 THRU 2X") for holes/bosses you can identify in the images.
-4. Fill the title block (title, drawing_no, rev, scale, notes).
-5. Output ONLY one JSON object valid against the schema — no markdown
+   reason to deviate; go one sheet size UP if needed to fit the detail
+   views comfortably. Keep all content inside the border (left 20mm,
+   right 10mm, top 10mm) and above the 70mm title-block band at the
+   bottom; keep >=15mm clear between views.
+3. Dimension thoroughly: overall W/H/D across two views, plus feature
+   sizes you can measure from the facts/images (text_override with the
+   true mm value); feature callouts (`kind`: "text" with a Ref target on
+   a view id and a leader, e.g. "Ø6.4 THRU 2X") for holes/bosses/details
+   you identify in the images.
+4. Add centerlines through symmetric features: `line` entities on layer
+   "CENTER" extending ~3mm past the geometry.
+5. Fill the title block completely (title naming what the object IS,
+   drawing_no, rev, scale, material if inferable, notes list with
+   material/finish/tolerance remarks).
+6. Output ONLY one JSON object valid against the schema — no markdown
    fences, no commentary.
 
 JSON schema for DrawingSpec:
@@ -678,6 +726,11 @@ def _call_llm_for_spec(prompt: str, image_paths=(), verbose: bool = False):
 
     backend = (os.environ.get("LLM_BACKEND")
                or os.environ.get("CAD_AGENT_BACKEND", "gemini")).lower()
+    if verbose:
+        model_name = os.environ.get("GEMINI_CODEGEN_MODEL",
+                                    "gemini-flash-latest")
+        print(f"[cad_agent.drawings] calling {backend} ({model_name}) "
+              f"with {len(image_paths)} view image(s)...", file=sys.stderr)
     if image_paths and backend != "anthropic":
         try:
             from google import genai
@@ -749,9 +802,14 @@ def draft_drawing(
     if (os.environ.get("CAD_AGENT_BACKEND", "").lower() == "anthropic"):
         os.environ.setdefault("LLM_BACKEND", "anthropic")
 
+    def _say(msg):
+        if verbose:
+            print(f"[cad_agent.drawings] {msg}", file=sys.stderr)
+
     stl_path, name, outdir = _resolve_model(source, name, output_dir)
     if sheet is not None and sheet not in SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
+    _say(f"model: {stl_path}")
 
     # --- Study the shape ----------------------------------------------
     mesh = load_mesh(str(stl_path))
@@ -776,12 +834,12 @@ def draft_drawing(
         f"scale {e.scale:g}"
         for v, e in tmpl_views.items())
 
-    f, t, r = views["front"], views["top"], views["right"]
+    f, t_, r = views["front"], views["top"], views["right"]
     facts = (
         f"- overall size, mm: width {f.width:.1f} (X), "
-        f"depth {t.height:.1f} (Y), height {f.height:.1f} (Z)\n"
+        f"depth {t_.height:.1f} (Y), height {f.height:.1f} (Z)\n"
         f"- view sizes, model mm: front {f.width:.1f} x {f.height:.1f}, "
-        f"top {t.width:.1f} x {t.height:.1f}, "
+        f"top {t_.width:.1f} x {t_.height:.1f}, "
         f"right {r.width:.1f} x {r.height:.1f}\n"
         f"- mesh: {len(mesh.faces)} triangles, "
         f"{mesh.body_count} bodies\n"
@@ -794,7 +852,11 @@ def draft_drawing(
         f"ANSI_A-ANSI_E"
     )
 
+    _say(f"studied shape: {f.width:.1f} x {t_.height:.1f} x "
+         f"{f.height:.1f} mm, suggested {sug_sheet} at "
+         f"{_scale_label(sug_scale)}")
     images = _render_view_images(mesh, outdir, name)
+    _say(f"rendered {len(images)} classified view image(s) for the LLM")
     image_note = (" and rendered images of its views (attached; gray "
                   "lines are hidden/occluded edges)") if images else ""
 
@@ -862,6 +924,9 @@ def draft_drawing(
                     f"{x.entity_id}: {x.message}" for x in errors[:5])
                 feedback = _revise(last_error)
                 continue
+            _say(f"spec accepted: {len(spec.entities)} entities, "
+                 f"{len(spec.annotations)} annotations, "
+                 f"{len(findings)} validator finding(s)")
 
             dxf_path = outdir / f"{name}_sheet.dxf"
             builder.save(str(dxf_path))

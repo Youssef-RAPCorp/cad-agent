@@ -149,6 +149,11 @@ class Mesh3DView(_EntityBase):
     angle_threshold_deg: float = 30.0                # feature-edge cutoff
     show_hidden: bool = False                        # occluded edges, dashed
     hidden_layer: str = "HIDDEN"                     # layer for hidden edges
+    # Detail (zoom) views: crop the projection to a window measured in
+    # model mm from the view's lower-left corner, and optionally ring
+    # the placed view with a detail boundary circle.
+    region: Optional[Tuple[float, float, float, float]] = None
+    frame: bool = False
     label:  Optional[str] = None                     # text below the view
     label_height: Optional[float] = None             # else default_text_height * 1.4
     label_offset: float = 6.0                        # mm gap below the view
