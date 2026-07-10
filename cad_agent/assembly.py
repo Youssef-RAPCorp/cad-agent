@@ -714,6 +714,7 @@ def assemble(
     max_layout_revisions: int = 12,
     write_parts: bool = True,
     verbose: bool = False,
+    progress: bool = True,
 ) -> AssemblyResult:
     """Generate a multi-part assembly from a natural-language spec.
 
@@ -745,12 +746,17 @@ def assemble(
     last_error = "no attempts made"
     cache: Dict[str, object] = {}
 
+    # Stage-level progress prints by default — an assembly run takes
+    # minutes and total silence reads as a hang. verbose adds per-part
+    # detail on top; progress=False silences everything (library use).
     def _say(msg):
-        if verbose:
+        if verbose or progress:
             print(f"[cad_agent.assembly] {msg}", file=sys.stderr)
 
     def _revise(round_tag: str, problem: str, raw: str) -> str:
         _say(f"  revising ({round_tag}): {problem[:200]}")
+        if not (verbose or progress):
+            pass
         result.report.append(f"{round_tag}: {problem[:500]}")
         return (f"\nYOUR PREVIOUS PLAN FAILED:\n{problem[:2500]}\n\n"
                 f"Previous JSON (truncated):\n{raw[:2500]}\n\n"
@@ -924,7 +930,8 @@ def assemble(
 
         # --- verify precisely -------------------------------------------
         t1 = time.time()
-        violations = _verify_assembly(plan, placed, verbose=verbose)
+        violations = _verify_assembly(plan, placed,
+                                      verbose=verbose or progress)
         _say(f"precise verification took {time.time() - t1:.0f}s")
         if violations:
             last_error = ("assembly verification failed: "
