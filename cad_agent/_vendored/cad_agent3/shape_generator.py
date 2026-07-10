@@ -16,7 +16,7 @@ quality is the LLM's responsibility.
 
 Environment:
   GEMINI_API_KEY (or GOOGLE_API_KEY)   required
-  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-flash-latest'
+  GEMINI_CODEGEN_MODEL                 optional; default 'gemini-3.5-flash'
 
 Usage:
     from cad_agent3.shape_generator import generate_shape

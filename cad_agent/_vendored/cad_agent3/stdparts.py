@@ -91,6 +91,14 @@ def involute_gear(module: float, teeth: int, thickness: float = 5.0,
         pts.append((rf * math.sin(a0), rf * math.cos(a0)))
         pts.insert(0, (rf * math.sin(-a0), rf * math.cos(-a0)))
 
+    # Ensure counterclockwise winding — a clockwise polygon extrudes in
+    # -Z, putting the teeth on the wrong side of the root disk.
+    area2 = sum(pts[i][0] * pts[(i + 1) % len(pts)][1]
+                - pts[(i + 1) % len(pts)][0] * pts[i][1]
+                for i in range(len(pts)))
+    if area2 < 0:
+        pts.reverse()
+
     tooth = Polygon(*pts)
     profile = Circle(rf)
     for i in range(z):

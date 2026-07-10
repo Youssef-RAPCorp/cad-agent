@@ -22,7 +22,7 @@ from typing import Literal, Optional
 
 Backend = Literal["gemini", "anthropic"]
 
-DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
 
 
