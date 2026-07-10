@@ -101,6 +101,17 @@ class Instance(BaseModel):
     at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotate: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     mounts: Optional[str] = None
+    # Gear-train links: instead of hand-computing positions, reference an
+    # EARLIER instance by label ("gear_z40#1" = first instance of part
+    # gear_z40). mesh_with places this gear at the exact meshing center
+    # distance at mesh_angle_deg (in the gear plane) and computes the
+    # tooth phasing automatically; stack_on mounts this instance
+    # coaxially on the mate (same position/orientation), shifted by
+    # axial_offset along the shared axis. Both override at/rotate.
+    mesh_with: Optional[str] = None
+    mesh_angle_deg: float = 0.0
+    stack_on: Optional[str] = None
+    axial_offset: float = 0.0
 
 
 class CountCheck(BaseModel):
@@ -190,14 +201,23 @@ instances, as one JSON object valid against the schema.
 Rules:
 1. PRECISION PARTS: gears/cogs MUST be declared as primitives —
    {{"kind": "involute_gear", "module": m, "teeth": z, "thickness": t,
-   "bore": d}} — never as described geometry. Meshing gears share the same
-   module; their center distance MUST equal module*(teeth1+teeth2)/2 —
-   compute instance positions from that rule. Phase meshing pairs by
-   rotating one gear (rotate[2] = 180/teeth degrees is the usual
-   correction). Gear primitives are modeled axis +Z, z=0..thickness,
-   centered in XY; use `rotate` to orient them. A gear mounted on an
-   arbor MUST set "bore" >= the arbor diameter + 0.4mm, or the shaft
-   will interfere with the gear and fail verification.
+   "bore": d}} — never as described geometry. Gear primitives are
+   modeled axis +Z, z=0..thickness, centered in XY; use `rotate` to
+   orient the FIRST gear of a train. A gear mounted on an arbor MUST
+   set "bore" >= the arbor diameter + 0.4mm.
+   GEAR TRAINS — NEVER hand-compute meshing positions. Place only the
+   first gear of each train with at/rotate; place every other gear with
+   a LINK to an earlier instance (labels are part_id + "#" + occurrence
+   number in the instances list):
+     - {{"part": "gear_z12", "mesh_with": "gear_z40#1",
+        "mesh_angle_deg": 30, "axial_offset": 0}} — the engine computes
+        the exact center distance AND tooth phasing; you choose only the
+        direction (mesh_angle_deg, in the gear plane) and, if the mate
+        is on a different axial layer, axial_offset.
+     - {{"part": "gear_z40", "stack_on": "gear_z12#2",
+        "axial_offset": 4}} — coaxial on the same arbor, shifted along
+        the axis. Linked instances inherit the mate's orientation and
+        are auto-exempted from pre-flight against it.
 2. LLM PARTS: everything else gets a `description` — self-contained,
    fully dimensioned in mm, written like a spec for a machinist ("a
    rectangular seat board 200x180x20mm with two 10mm notches...") — and
@@ -264,6 +284,70 @@ def _xform(pt, R, at):
     return (R[0][0] * pt[0] + R[0][1] * pt[1] + R[0][2] * pt[2] + at[0],
             R[1][0] * pt[0] + R[1][1] * pt[1] + R[1][2] * pt[2] + at[1],
             R[2][0] * pt[0] + R[2][1] * pt[1] + R[2][2] * pt[2] + at[2])
+
+
+def _resolve_links(plan: AssemblyPlan) -> List[str]:
+    """Compute positions for mesh_with / stack_on linked instances.
+
+    Processes instances in list order (links must reference earlier
+    instances). Mutates inst.at / inst.rotate in place and auto-fills
+    `mounts` so the pre-flight exempts the linked pair. Returns
+    violation strings (empty = ok).
+    """
+    from ._vendored.cad_agent3.stdparts import mesh_phase
+
+    errors: List[str] = []
+    parts_by_id = {pt.id: pt for pt in plan.parts}
+    seen: Dict[str, Instance] = {}
+    counters: Dict[str, int] = {}
+    for inst in plan.instances:
+        counters[inst.part] = counters.get(inst.part, 0) + 1
+        label = f"{inst.part}#{counters[inst.part]}"
+        ref = inst.mesh_with or inst.stack_on
+        if ref is not None:
+            mate = seen.get(ref)
+            if mate is None:
+                errors.append(
+                    f"{label}: link target '{ref}' not found among EARLIER "
+                    f"instances (labels are part_id#occurrence, in list "
+                    f"order)")
+                seen[label] = inst
+                continue
+            if inst.mesh_with is not None:
+                g_self = parts_by_id[inst.part].primitive
+                g_mate = parts_by_id[mate.part].primitive
+                if g_self is None or g_mate is None:
+                    errors.append(f"{label}: mesh_with requires both parts "
+                                  f"to be gear primitives")
+                    seen[label] = inst
+                    continue
+                if g_self.module != g_mate.module:
+                    errors.append(
+                        f"{label}: cannot mesh module {g_self.module} with "
+                        f"module {g_mate.module}")
+                    seen[label] = inst
+                    continue
+                import math as _m
+                cd = g_mate.module * (g_mate.teeth + g_self.teeth) / 2.0
+                a = inst.mesh_angle_deg
+                R_plane = _rot_matrix(mate.rotate[0], mate.rotate[1], 0.0)
+                off = (cd * _m.cos(_m.radians(a)),
+                       cd * _m.sin(_m.radians(a)),
+                       inst.axial_offset)
+                inst.at = _xform(off, R_plane, mate.at)
+                spin = mesh_phase(g_mate.teeth, g_self.teeth, a,
+                                  mate.rotate[2])
+                inst.rotate = (mate.rotate[0], mate.rotate[1], spin)
+            else:                       # stack_on
+                R_plane = _rot_matrix(mate.rotate[0], mate.rotate[1], 0.0)
+                inst.at = _xform((0.0, 0.0, inst.axial_offset), R_plane,
+                                 mate.at)
+                inst.rotate = (mate.rotate[0], mate.rotate[1],
+                               inst.rotate[2])
+            if inst.mounts is None:
+                inst.mounts = mate.part
+        seen[label] = inst
+    return errors
 
 
 def _preflight(plan: AssemblyPlan) -> List[str]:
@@ -427,12 +511,35 @@ def _place(solid, inst: Instance):
     return Pos(x, y, z) * Rot(rx, ry, rz) * solid
 
 
+def _tessellate_for_check(solid):
+    """One-time triangulation of a placed solid for fast interference
+    queries. Returns a trimesh.Trimesh or None."""
+    try:
+        import trimesh as _tm
+        verts, tris = solid.tessellate(0.5)
+        return _tm.Trimesh(
+            vertices=[(v.X, v.Y, v.Z) for v in verts],
+            faces=tris, process=True)
+    except Exception:
+        return None
+
+
 def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
-                     tol_mm3: float = 0.5, verbose: bool = False):
-    """Return a list of violation strings (empty = clean)."""
+                     tol_depth: float = 0.3, verbose: bool = False):
+    """Return a list of violation strings (empty = clean).
+
+    Interference is measured on triangle meshes, not OCC booleans: every
+    instance is tessellated ONCE, then each AABB-overlapping pair runs a
+    BVH point-in-mesh depth query (sample the smaller part's surface,
+    signed distance into the larger) — milliseconds per pair and linear
+    in total mesh size, versus seconds per boolean. Pairs where neither
+    mesh is watertight fall back to an exact OCC boolean.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
     violations: List[str] = []
 
-    # 1. Plan-declared count checks.
     for chk in plan.checks:
         n = sum(1 for inst in plan.instances
                 if fnmatch.fnmatch(inst.part, chk.pattern))
@@ -441,24 +548,37 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
                 f"count check failed: {n} instances match "
                 f"'{chk.pattern}' (need {chk.min}..{chk.max})")
 
-    # 2. Pairwise interference, AABB-prefiltered. Meshing gears at the
-    # correct center distance intersect by ~0 and pass.
-    boxes = []
-    for label, solid in placed:
-        bb = solid.bounding_box()
-        boxes.append((label, solid,
-                      (bb.min.X, bb.min.Y, bb.min.Z,
-                       bb.max.X, bb.max.Y, bb.max.Z)))
     mounted_pairs = set()
     for inst in plan.instances:
         if inst.mounts:
             mounted_pairs.add(frozenset((inst.part, inst.mounts)))
 
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        meshes = list(pool.map(_tessellate_for_check,
+                               [s for _, s in placed]))
+    if verbose:
+        print(f"[cad_agent.assembly] tessellated {len(meshes)} instances "
+              f"in {time.time() - t0:.1f}s", file=sys.stderr)
+
+    boxes = []
+    for (label, solid), mesh in zip(placed, meshes):
+        if mesh is not None and len(mesh.vertices):
+            b = mesh.bounds
+            boxes.append((label, solid, mesh,
+                          (b[0][0], b[0][1], b[0][2],
+                           b[1][0], b[1][1], b[1][2])))
+        else:
+            bb = solid.bounding_box()
+            boxes.append((label, solid, None,
+                          (bb.min.X, bb.min.Y, bb.min.Z,
+                           bb.max.X, bb.max.Y, bb.max.Z)))
+
     margin = 0.2  # ignore mere surface contact
     pairs = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
-            a, b = boxes[i][2], boxes[j][2]
+            a, b = boxes[i][3], boxes[j][3]
             if (min(a[3], b[3]) - max(a[0], b[0]) > margin
                     and min(a[4], b[4]) - max(a[1], b[1]) > margin
                     and min(a[5], b[5]) - max(a[2], b[2]) > margin):
@@ -469,31 +589,78 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
             f"({len(pairs)} > {max_pairs}) — spread the layout out")
         return violations
     if verbose and pairs:
-        print(f"[cad_agent.assembly] checking {len(pairs)} "
-              f"AABB-overlapping pairs for interference (parallel)",
-              file=sys.stderr)
+        print(f"[cad_agent.assembly] depth-checking {len(pairs)} "
+              f"AABB-overlapping pairs", file=sys.stderr)
 
-    def _check_pair(pair):
-        i, j = pair
-        la, sa, _ = boxes[i]
-        lb, sb, _ = boxes[j]
-        try:
-            inter = sa & sb
-            v = float(inter.volume) if inter is not None else 0.0
-        except Exception:
-            v = 0.0
-        if v <= tol_mm3:
-            return None
+    def _fmt(la, lb, depth):
         pa = la.rsplit("#", 1)[0]
         pb = lb.rsplit("#", 1)[0]
         hint = (" (mounted pair: enlarge the mounted part's bore/"
                 "clearance beyond its shaft diameter)"
                 if frozenset((pa, pb)) in mounted_pairs else "")
-        return f"interference: {la} and {lb} overlap by {v:.1f} mm³{hint}"
+        return (f"interference: {la} and {lb} interpenetrate by "
+                f"{depth:.1f} mm{hint}")
+
+    def _samples(mesh, region, spacing=2.0, cap=800):
+        """Surface sample points of `mesh` inside the overlap `region`.
+        Long edges are subdivided — coarse tessellations (a cylinder
+        wall has vertices only at its end rims) would otherwise have no
+        samples inside a thin overlap band."""
+        import numpy as _np
+        pts = [mesh.vertices, mesh.triangles_center]
+        edges = mesh.vertices[mesh.edges_unique]
+        lens = _np.linalg.norm(edges[:, 1] - edges[:, 0], axis=1)
+        for k in _np.nonzero(lens > spacing)[0][:400]:
+            n = min(int(lens[k] / spacing), 24)
+            ts = (_np.arange(1, n + 1) / (n + 1.0))[:, None]
+            pts.append(edges[k, 0] + ts * (edges[k, 1] - edges[k, 0]))
+        P = _np.vstack(pts)
+        lo = _np.array(region[:3]) - 1.0
+        hi = _np.array(region[3:]) + 1.0
+        P = P[((P >= lo) & (P <= hi)).all(axis=1)]
+        if len(P) > cap:
+            P = P[_np.linspace(0, len(P) - 1, cap).astype(int)]
+        return P
+
+    def _check_pair(pair):
+        import numpy as _np
+        import trimesh as _tm
+        i, j = pair
+        la, sa, ma, ba = boxes[i]
+        lb, sb, mb, bb2 = boxes[j]
+        region = (max(ba[0], bb2[0]), max(ba[1], bb2[1]),
+                  max(ba[2], bb2[2]), min(ba[3], bb2[3]),
+                  min(ba[4], bb2[4]), min(ba[5], bb2[5]))
+        # Fast path: sample the smaller mesh's surface inside the
+        # overlap region, measure depth inside the watertight mate.
+        if ma is not None and mb is not None:
+            small, big = ((ma, mb) if ma.volume <= mb.volume else (mb, ma))
+            if not big.is_watertight and small.is_watertight:
+                small, big = big, small
+            if big.is_watertight:
+                pts = _samples(small, region)
+                if len(pts) == 0:
+                    return None
+                try:
+                    d = _tm.proximity.signed_distance(big, pts)
+                    depth = float(d.max())
+                    if depth > tol_depth:
+                        return _fmt(la, lb, depth)
+                    return None
+                except Exception:
+                    pass
+        # Exact fallback (rare): OCC boolean intersection volume.
+        try:
+            inter = sa & sb
+            v = float(inter.volume) if inter is not None else 0.0
+        except Exception:
+            v = 0.0
+        if v > 0.5:
+            return _fmt(la, lb, v ** (1.0 / 3.0))
+        return None
 
     if pairs:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(8, len(pairs))) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             for msg in pool.map(_check_pair, pairs):
                 if msg:
                     violations.append(msg)
@@ -571,13 +738,21 @@ def assemble(
                 last_error = f"plan validation failed: {e}"
                 feedback = _revise(tag, last_error, raw)
                 continue
+            link_errors = _resolve_links(plan)
+            if link_errors:
+                last_error = ("gear-train link errors: "
+                              + "; ".join(link_errors[:10]))
+                feedback = _revise(tag, last_error, raw)
+                continue
             viols = _preflight(plan)
             if not viols:
                 _say(f"layout clean after {it} iteration(s), "
                      f"{time.time() - t0:.0f}s")
                 return plan, raw
             last_error = ("layout pre-flight failed (proxy boxes, no "
-                          "geometry generated): " + "; ".join(viols[:8]))
+                          "geometry generated): " + "; ".join(viols[:30])
+                          + ". FIX MINIMALLY: keep every instance that is "
+                          "not listed above exactly as it was.")
             feedback = _revise(tag, last_error, raw)
         return None
 

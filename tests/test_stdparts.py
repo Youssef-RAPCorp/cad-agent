@@ -35,6 +35,32 @@ def test_gear_pairs_mesh_without_interference():
         assert v == pytest.approx(0.0, abs=1e-6), f"z{z1}/z{z2} interferes"
 
 
+def test_mesh_phase_formula():
+    """mesh_phase() must produce interference-free meshing for any
+    bearing angle, tooth ratio, and input spin."""
+    import math
+    from cad_agent._vendored.cad_agent3.stdparts import mesh_phase
+
+    for z1, z2 in ((30, 12), (17, 23)):
+        for a in (0.0, 37.0):
+            for psi1 in (0.0, 11.0):
+                m = 1.5
+                g1 = Rot(0, 0, psi1) * involute_gear(module=m, teeth=z1,
+                                                     thickness=4)
+                cd = m * (z1 + z2) / 2
+                g2 = (Pos(cd * math.cos(math.radians(a)),
+                          cd * math.sin(math.radians(a)), 0)
+                      * Rot(0, 0, mesh_phase(z1, z2, a, psi1))
+                      * involute_gear(module=m, teeth=z2, thickness=4))
+                inter = g1 & g2
+                try:
+                    v = float(inter.volume)
+                except Exception:
+                    v = 0.0
+                assert v == pytest.approx(0.0, abs=1e-6), \
+                    f"z{z1}/z{z2} a={a} psi1={psi1} interferes ({v:.3f})"
+
+
 def test_helper_available_in_codegen_sandbox():
     code = """
 from build123d import *

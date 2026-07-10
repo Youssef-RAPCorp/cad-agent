@@ -108,7 +108,25 @@ def involute_gear(module: float, teeth: int, thickness: float = 5.0,
     return extrude(profile, float(thickness))
 
 
+def mesh_phase(teeth1: int, teeth2: int, bearing_angle_deg: float,
+               spin1_deg: float = 0.0) -> float:
+    """Spin (Z rotation, degrees) that meshes gear 2 with gear 1.
+
+    Gear 1 has `spin1_deg` about its own axis; gear 2 sits at
+    `bearing_angle_deg` from gear 1 (measured in the shared gear plane)
+    at the exact center distance m*(z1+z2)/2. Returns the spin for
+    gear 2 so its teeth land in gear 1's tooth spaces. Derived from the
+    tooth-direction convention of involute_gear (first tooth toward +Y)
+    and verified by boolean interference across tooth ratios, bearing
+    angles, and input spins.
+    """
+    r = teeth1 / teeth2
+    return (((1 + r) * bearing_angle_deg - r * spin1_deg
+             + 180.0 / teeth2 + 90.0 * (1 - r)) % (360.0 / teeth2))
+
+
 # Everything the sandbox should expose to generated code.
 SANDBOX_HELPERS = {
     "involute_gear": involute_gear,
+    "mesh_phase": mesh_phase,
 }

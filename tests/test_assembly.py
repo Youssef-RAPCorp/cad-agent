@@ -355,6 +355,62 @@ def test_mounted_interference_message_hints_bore(tmp_path, mock_planner,
     assert "bore" in result.error
 
 
+def test_gear_train_links_compute_positions_and_phase(tmp_path,
+                                                       mock_planner,
+                                                       mock_codegen):
+    """A 3-gear train + stacked pinion declared purely by topology
+    (mesh_with / stack_on, no hand-computed coordinates) builds clean in
+    one round — positions AND tooth phasing come from the engine."""
+    plan = {
+        "name": "linked train",
+        "parts": [
+            {"id": "gear_z40", "primitive": {"kind": "involute_gear",
+                                             "module": 1.5, "teeth": 40,
+                                             "thickness": 4.0}},
+            {"id": "gear_z12", "primitive": {"kind": "involute_gear",
+                                             "module": 1.5, "teeth": 12,
+                                             "thickness": 4.0}},
+        ],
+        "instances": [
+            {"part": "gear_z40", "at": [0, 0, 0]},
+            {"part": "gear_z12", "mesh_with": "gear_z40#1",
+             "mesh_angle_deg": 30},
+            {"part": "gear_z40", "stack_on": "gear_z12#1",
+             "axial_offset": 4},
+            {"part": "gear_z12", "mesh_with": "gear_z40#2",
+             "mesh_angle_deg": 275},
+        ],
+    }
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("linked gear train", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+    # engine computed the meshing position: z40/z12 center distance is 39
+    resolved = result.plan.instances[1]
+    import math
+    d = math.dist(resolved.at, result.plan.instances[0].at)
+    assert d == pytest.approx(39.0, abs=1e-6)
+
+
+def test_link_errors_feed_back_fast(tmp_path, mock_planner, mock_codegen):
+    plan = {
+        "name": "bad link",
+        "parts": [
+            {"id": "gear_z12", "primitive": {"kind": "involute_gear",
+                                             "module": 1.0, "teeth": 12,
+                                             "thickness": 3.0}},
+        ],
+        "instances": [
+            {"part": "gear_z12", "mesh_with": "gear_z40#7"},
+        ],
+    }
+    calls = mock_planner(json.dumps(plan), GOOD_PLAN)
+    result = assemble("bad link", output_dir=tmp_path)
+    assert result.success
+    assert calls["n"] == 2
+    assert "link target" in calls["prompts"][1]
+
+
 def test_plan_schema_rejects_bad_references():
     with pytest.raises(Exception):
         AssemblyPlan.model_validate_json(json.dumps({
