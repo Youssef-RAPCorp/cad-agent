@@ -47,6 +47,7 @@ Requires the optional drawing dependencies (from the repo root):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -134,6 +135,9 @@ _STANDARD_SCALES = (0.02, 0.05, 0.1, 0.2, 0.25, 0.5,
 # revision block (the title block itself is 180 x 60 mm, bottom-right).
 _TITLE_BLOCK_RESERVE = 70.0
 
+# Candidate sheets for auto-selection (smallest first for tie-breaking).
+_AUTO_SHEETS = ("A4", "A3", "A2", "A1", "A0")
+
 
 def _scale_label(s: float) -> str:
     return f"{s:g}:1" if s >= 1.0 else f"1:{1.0 / s:g}"
@@ -149,11 +153,12 @@ def draw_multiview(
     *,
     name: Optional[str] = None,
     output_dir: Optional[Union[str, Path]] = None,
-    sheet: str = "A2",
+    sheet: Optional[str] = None,
     scale: Optional[float] = None,
     title_block: Optional[TitleBlock] = None,
     revisions: Optional[List[RevisionEntry]] = None,
     spacing: float = 25.0,
+    dimensions: bool = True,
     preview: bool = True,
     dpi: int = 180,
 ) -> SheetResult:
@@ -178,7 +183,11 @@ def draw_multiview(
         title_block: full TitleBlock override. A sensible default is
               built from `name` and the chosen scale if omitted.
         revisions: optional revision-block entries.
-        spacing: gap between adjacent views, in sheet mm.
+        spacing: minimum gap between adjacent views, in sheet mm. The
+              horizontal gaps stretch (up to 3x) to use free sheet width.
+        dimensions: add overall dimensions — width and height on the
+              front view, depth on the top view. The dim text shows the
+              true model size in mm (not the scaled sheet distance).
         preview: also render a paperspace PNG of the sheet.
         dpi: preview resolution.
 
@@ -208,9 +217,8 @@ def draw_multiview(
     outdir = Path(output_dir) if output_dir else stl_path.parent
     outdir.mkdir(parents=True, exist_ok=True)
 
-    if sheet not in SHEETS:
+    if sheet is not None and sheet not in SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
-    sh = SHEETS[sheet]
 
     # STEP is BREP — trimesh can't read it. Tessellate via build123d and
     # keep the STL beside the outputs so the spec stays rebuildable.
@@ -234,17 +242,28 @@ def draw_multiview(
     if not front.edges_2d:
         raise ValueError(f"no projectable edges found in {stl_path}")
 
-    # --- Choose a scale that fits front+right / front+top ------------
+    # --- Choose sheet + scale -----------------------------------------
+    def _fit_scale(cand) -> float:
+        # The iso column (at 0.7x) sits right of the right view, so it
+        # counts toward the width budget.
+        fw_fit = (cand.inside_width - 2 * spacing) / max(
+            front.width + right.width + 0.7 * iso.width, 1e-9)
+        fh_fit = ((cand.inside_height - _TITLE_BLOCK_RESERVE - spacing)
+                  / max(front.height + top.height, 1e-9))
+        # 0.85 leaves breathing room for view labels and dimensions.
+        return _pick_scale(min(fw_fit, fh_fit) * 0.85)
+
+    if sheet is None:
+        # Prefer the sheet whose standard scale is closest to true size
+        # (1:1); ties go to the smaller sheet.
+        sheet = min(_AUTO_SHEETS,
+                    key=lambda s: (abs(math.log(_fit_scale(SHEETS[s]))),
+                                   SHEETS[s].width_mm))
+    sh = SHEETS[sheet]
     usable_w = sh.inside_width
     usable_h = sh.inside_height - _TITLE_BLOCK_RESERVE
     if scale is None:
-        # The iso column (at 0.7x) sits to the right of the right view,
-        # so it counts toward the width budget.
-        fit_w = (usable_w - 2 * spacing) / max(
-            front.width + right.width + 0.7 * iso.width, 1e-9)
-        fit_h = (usable_h - spacing) / max(front.height + top.height, 1e-9)
-        # 0.85 leaves breathing room for view labels.
-        scale = _pick_scale(min(fit_w, fit_h) * 0.85)
+        scale = _fit_scale(sh)
 
     # --- Third-angle layout (origins are view centers, sheet mm) -----
     fw, fh = front.width * scale, front.height * scale
@@ -252,7 +271,11 @@ def draw_multiview(
     rw = right.width * scale
     iso_scale = scale * 0.7
     iw = iso.width * iso_scale
-    total_w = fw + spacing + rw + spacing + iw
+    # Stretch the horizontal gaps into the leftover width so tall
+    # narrow parts don't huddle in one corner of a landscape sheet.
+    gap_x = min(3 * spacing,
+                max(spacing, (usable_w - (fw + rw + iw)) / 4.0))
+    total_w = fw + gap_x + rw + gap_x + iw
     total_h = fh + spacing + th
     bx = sh.border_left + max((usable_w - total_w) / 2.0, 0.0)
     by = (sh.border_bottom + _TITLE_BLOCK_RESERVE
@@ -260,11 +283,35 @@ def draw_multiview(
 
     front_c = (bx + fw / 2.0, by + fh / 2.0)
     top_c = (front_c[0], by + fh + spacing + th / 2.0)
-    right_c = (bx + fw + spacing + rw / 2.0, front_c[1])
+    right_c = (bx + fw + gap_x + rw / 2.0, front_c[1])
     # Iso in its own column right of the right view, clamped to the sheet.
-    iso_x = min(bx + fw + spacing + rw + spacing + iw / 2.0,
+    iso_x = min(bx + fw + gap_x + rw + gap_x + iw / 2.0,
                 sh.width_mm - sh.border_right - iw / 2.0)
     iso_c = (iso_x, top_c[1])
+
+    # --- Overall dimensions -------------------------------------------
+    # Anchored to the views' registered bounding boxes (vertices run
+    # counterclockwise from the lower-left). The views are drawn scaled,
+    # so the dim text is overridden with the true model size.
+    annotations: List[Annotation] = []
+    if dimensions:
+        def _fmt(v: float) -> str:
+            return f"{v:.1f}".rstrip("0").rstrip(".")
+
+        def _dim(did, view_id, i1, i2, side, true_mm):
+            return LinearDim(
+                id=did,
+                p1=Ref(entity_id=view_id, snap=Snap.VERTEX, index=i1),
+                p2=Ref(entity_id=view_id, snap=Snap.VERTEX, index=i2),
+                side=side,
+                text_override=_fmt(true_mm),
+            )
+
+        annotations = [
+            _dim("D_WIDTH", "V_FRONT", 0, 1, "below", front.width),
+            _dim("D_HEIGHT", "V_FRONT", 0, 3, "left", front.height),
+            _dim("D_DEPTH", "V_TOP", 1, 2, "right", top.height),
+        ]
 
     spec = DrawingSpec(
         sheet=sheet,
@@ -275,7 +322,9 @@ def draw_multiview(
             subtitle="Multi-view from 3D model",
             drawing_no=f"CAD-{name.upper()}",
             scale=_scale_label(scale),
-            notes=["VIEWS DERIVED FROM 3D MODEL"],
+            notes=["VIEWS DERIVED FROM 3D MODEL",
+                   "OVERALL DIMENSIONS IN MM"] if dimensions
+                  else ["VIEWS DERIVED FROM 3D MODEL"],
         ),
         revisions=revisions or [],
         entities=[
@@ -288,7 +337,7 @@ def draw_multiview(
             Mesh3DView(id="V_ISO", path=str(stl_path), view="iso",
                        origin=iso_c, scale=iso_scale, label="ISOMETRIC"),
         ],
-        annotations=[],
+        annotations=annotations,
     )
 
     builder = DrawingBuilder(spec)

@@ -36,13 +36,16 @@ def main(argv=None) -> int:
                    help="Output directory (default: next to the model, or "
                         "./cad_output for descriptions)")
     p.add_argument("--sheet", default=None,
-                   help="Sheet size: A4-A0 or ANSI_A-ANSI_E (default: A2 "
-                        "for multi-view; LLM's choice for descriptions)")
+                   help="Sheet size: A4-A0 or ANSI_A-ANSI_E (default: "
+                        "auto-picked for multi-view; LLM's choice for "
+                        "descriptions)")
     p.add_argument("--scale", type=float, default=None,
                    help="View scale for multi-view sheets, e.g. 2 for 2:1 "
                         "(default: auto-fit)")
     p.add_argument("--max-revisions", type=int, default=3,
                    help="LLM retry budget for description mode (default: 3)")
+    p.add_argument("--no-dims", action="store_true",
+                   help="Skip the overall dimensions on multi-view sheets")
     p.add_argument("--no-preview", action="store_true",
                    help="Skip the PNG preview, write only the DXF")
     p.add_argument("--verbose", "-v", action="store_true")
@@ -73,8 +76,9 @@ def main(argv=None) -> int:
                 src,
                 name=args.name,
                 output_dir=args.output,
-                sheet=args.sheet or "A2",
+                sheet=args.sheet,
                 scale=args.scale,
+                dimensions=not args.no_dims,
                 preview=not args.no_preview,
             )
         else:

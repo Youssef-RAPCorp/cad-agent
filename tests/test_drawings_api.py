@@ -43,6 +43,32 @@ def test_draw_multiview_from_path(stl_path, tmp_path):
     assert "OK: drawing 'step_block'" in sheet.summary()
 
 
+def test_draw_multiview_overall_dimensions(stl_path):
+    """The 40 x 20 x 20 block gets true-size overall dims regardless of
+    the drawn scale."""
+    sheet = draw_multiview(stl_path, preview=False)
+    dims = {a.id: a for a in sheet.spec.annotations}
+    assert set(dims) == {"D_WIDTH", "D_HEIGHT", "D_DEPTH"}
+    assert dims["D_WIDTH"].text_override == "40"
+    assert dims["D_HEIGHT"].text_override == "20"
+    assert dims["D_DEPTH"].text_override == "20"
+    assert not [f for f in sheet.findings if f.severity == "error"]
+
+
+def test_draw_multiview_no_dimensions(stl_path):
+    sheet = draw_multiview(stl_path, preview=False, dimensions=False)
+    assert sheet.spec.annotations == []
+
+
+def test_draw_multiview_auto_sheet_prefers_near_true_size(stl_path):
+    """A 40mm part should land on a small sheet at a modest enlargement,
+    not float tiny in a corner of A2. Larger sheets would push the scale
+    further from 1:1, so A4 at 2:1 wins."""
+    sheet = draw_multiview(stl_path, preview=False)
+    assert sheet.sheet == "A4"
+    assert sheet.scale == 2.0
+
+
 def test_draw_multiview_from_cad_result(stl_path, tmp_path):
     result = CADResult(
         spec="a stepped block",
