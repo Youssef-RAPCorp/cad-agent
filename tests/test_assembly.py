@@ -420,6 +420,47 @@ def test_link_errors_feed_back_fast(tmp_path, mock_planner, mock_codegen):
     assert "link target" in calls["prompts"][1]
 
 
+def test_diagonal_gears_no_false_positive(tmp_path, mock_planner,
+                                           mock_codegen):
+    """Grid diagonals: two z30 m1.5 gears 63.6mm apart (tip radii sum
+    48) do NOT touch — box proxies used to flag them and spiral the
+    planner. The exact cylinder test must pass them."""
+    plan = {
+        "name": "diagonal gears",
+        "parts": [
+            {"id": "gear_z30", "primitive": {"kind": "involute_gear",
+                                             "module": 1.5, "teeth": 30,
+                                             "thickness": 4.0}},
+        ],
+        "instances": [
+            {"part": "gear_z30", "at": [0, 0, 0]},
+            {"part": "gear_z30", "at": [45, 0, 0], "rotate": [0, 0, 6],
+             "mounts": None},
+            {"part": "gear_z30", "at": [45.0, 45.0, 0]},
+        ],
+    }
+    # 0-1 meshed at 45mm; 0-2 diagonal at 63.6mm (no contact); 1-2 at
+    # 45mm vertical — mesh-phase it too via the engine formula.
+    from cad_agent._vendored.cad_agent3.stdparts import mesh_phase
+    plan["instances"][1]["rotate"] = [0, 0, mesh_phase(30, 30, 0, 0)]
+    plan["instances"][2]["rotate"] = [
+        0, 0, mesh_phase(30, 30, 90, plan["instances"][1]["rotate"][2])]
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("diagonal gears", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+
+
+def test_instance_ids_tolerated(tmp_path, mock_planner, mock_codegen):
+    plan = json.loads(GOOD_PLAN)
+    for i, inst in enumerate(plan["instances"]):
+        inst["id"] = f"inst_{i}"
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("gearbox", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+
+
 def test_plan_schema_rejects_bad_references():
     with pytest.raises(Exception):
         AssemblyPlan.model_validate_json(json.dumps({

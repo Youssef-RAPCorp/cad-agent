@@ -98,6 +98,9 @@ class Instance(BaseModel):
     verified precisely after generation."""
     model_config = ConfigDict(extra="forbid")
     part: str
+    # Accepted and ignored — planners habitually name instances, and
+    # rejecting a whole plan over a label is pointless.
+    id: Optional[str] = None
     at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotate: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     mounts: Optional[str] = None
@@ -413,14 +416,48 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
         aabb = (min(p[0] for p in pts), min(p[1] for p in pts),
                 min(p[2] for p in pts), max(p[0] for p in pts),
                 max(p[1] for p in pts), max(p[2] for p in pts))
+        axis = (R[0][2], R[1][2], R[2][2])
         proxies.append((label, g, aabb, _xform(center_local, R, inst.at),
-                        inst))
+                        inst, axis))
 
     contact = 2.0                       # ignore adjacency/stacking contact
     for i in range(len(proxies)):
         for j in range(i + 1, len(proxies)):
-            la, ga, a, ca, ia = proxies[i]
-            lb, gb, b, cb, ib = proxies[j]
+            la, ga, a, ca, ia, axa = proxies[i]
+            lb, gb, b, cb, ib, axb = proxies[j]
+            # Gear-gear pairs get an EXACT cylinder test: box proxies
+            # false-positive on diagonal neighbors (boxes overlap at
+            # the corners where tip circles never touch).
+            if ga is not None and gb is not None:
+                dot = abs(axa[0] * axb[0] + axa[1] * axb[1]
+                          + axa[2] * axb[2])
+                if dot > 0.999:                     # parallel axes
+                    dv = (cb[0] - ca[0], cb[1] - ca[1], cb[2] - ca[2])
+                    ax_sep = abs(dv[0] * axa[0] + dv[1] * axa[1]
+                                 + dv[2] * axa[2])
+                    d3 = (dv[0] ** 2 + dv[1] ** 2 + dv[2] ** 2) ** 0.5
+                    radial = max(0.0, d3 ** 2 - ax_sep ** 2) ** 0.5
+                    ra_t = ga.module * (ga.teeth + 2) / 2.0
+                    rb_t = gb.module * (gb.teeth + 2) / 2.0
+                    if (ax_sep >= (ga.thickness + gb.thickness) / 2.0
+                            or radial >= ra_t + rb_t - 0.01):
+                        continue        # truly disjoint
+                    if radial < 2.0:
+                        continue                    # coaxial stack
+                    if ga.module == gb.module:
+                        need = ga.module * (ga.teeth + gb.teeth) / 2.0
+                        if abs(radial - need) <= 0.5:
+                            continue                # correctly meshed
+                        violations.append(
+                            f"gears {la} and {lb} overlap but are "
+                            f"{radial:.1f}mm apart (in-plane); meshing "
+                            f"needs exactly {need:.1f}mm")
+                        continue
+                    violations.append(
+                        f"gears {la} and {lb} overlap with different "
+                        f"modules ({ga.module} vs {gb.module}) — they "
+                        f"cannot mesh")
+                    continue
             # Mounted pairs (gear on arbor, hand on arbor, sleeve around
             # shaft) legitimately overlap; precise verification after
             # generation judges their true fit (bores vs shafts).
@@ -443,21 +480,11 @@ def _preflight(plan: AssemblyPlan) -> List[str]:
                     and min(a[5], b[5]) - max(a[2], b[2]) > contact):
                 continue
             if ga is not None and gb is not None:
-                d = ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2
-                     + (ca[2] - cb[2]) ** 2) ** 0.5
-                if d < 2.0:
-                    continue            # coaxial stacked wheels
-                if ga.module == gb.module:
-                    need = ga.module * (ga.teeth + gb.teeth) / 2.0
-                    if abs(d - need) <= 0.5:
-                        continue        # correctly meshed pair
-                    violations.append(
-                        f"gears {la} and {lb} overlap but are {d:.1f}mm "
-                        f"apart; meshing needs exactly {need:.1f}mm")
-                    continue
+                # non-parallel gear axes: rare; treat AABB overlap as a
+                # genuine layout clash.
                 violations.append(
-                    f"gears {la} and {lb} overlap with different modules "
-                    f"({ga.module} vs {gb.module}) — they cannot mesh")
+                    f"gears {la} and {lb} overlap with non-parallel "
+                    f"axes — separate them or align their arbors")
                 continue
             violations.append(
                 f"layout overlap: {la} at {tuple(round(v) for v in ia.at)} "
@@ -551,7 +578,8 @@ def _tessellate_for_check(solid):
 
 
 def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
-                     tol_depth: float = 0.3, verbose: bool = False):
+                     tol_depth: float = 0.3, verbose: bool = False,
+                     exempt_pairs=frozenset()):
     """Return a list of violation strings (empty = clean).
 
     Interference is measured on triangle meshes, not OCC booleans: every
@@ -611,6 +639,8 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
     pairs = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
+            if frozenset((boxes[i][0], boxes[j][0])) in exempt_pairs:
+                continue
             a, b = boxes[i][3], boxes[j][3]
             if (min(a[3], b[3]) - max(a[0], b[0]) > margin
                     and min(a[4], b[4]) - max(a[1], b[1]) > margin
@@ -759,8 +789,9 @@ def assemble(
             pass
         result.report.append(f"{round_tag}: {problem[:500]}")
         return (f"\nYOUR PREVIOUS PLAN FAILED:\n{problem[:2500]}\n\n"
-                f"Previous JSON (truncated):\n{raw[:2500]}\n\n"
-                f"Fix these problems and output the corrected plan.\n")
+                f"Previous JSON:\n{raw[:20000]}\n\n"
+                f"Return the SAME plan with ONLY the minimal edits that "
+                f"fix the problems above.\n")
 
     def _plan_layout(build_round: int):
         """Fast inner loop: planner call + proxy pre-flight, no geometry."""
@@ -864,6 +895,7 @@ def assemble(
             placed.append([label, _place(solids[inst.part], inst),
                            inst.part in carve_ids])
 
+        carved_exempt = set()
         # --- carve structural clearances --------------------------------
         # AABB-prefiltered and batched: each structural part subtracts
         # ONE compound of everything that actually overlaps it (a full
@@ -923,6 +955,15 @@ def assemble(
                 k, solid, n = _carve_one(job)
                 placed[k][1] = solid
                 n_pockets += n
+            # Carver/tool pairs are disjoint BY CONSTRUCTION (the tool
+            # was boolean-subtracted); re-measuring those zero-clearance
+            # mating surfaces through lossy tessellation false-positives.
+            label_of = [e[0] for e in placed]
+            for k, tools in jobs:
+                for m2 in range(len(placed)):
+                    if originals[m2] in tools:
+                        carved_exempt.add(
+                            frozenset((label_of[k], label_of[m2])))
             _say(f"carved {n_pockets} clearance pockets into "
                  f"{len(carve_ids)} structural part(s) in "
                  f"{time.time() - t1:.0f}s ({len(jobs)} parallel jobs)")
@@ -930,8 +971,9 @@ def assemble(
 
         # --- verify precisely -------------------------------------------
         t1 = time.time()
-        violations = _verify_assembly(plan, placed,
-                                      verbose=verbose or progress)
+        violations = _verify_assembly(
+            plan, placed, verbose=verbose or progress,
+            exempt_pairs=carved_exempt)
         _say(f"precise verification took {time.time() - t1:.0f}s")
         if violations:
             last_error = ("assembly verification failed: "
