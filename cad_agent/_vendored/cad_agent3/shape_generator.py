@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import traceback
 import importlib
 from dataclasses import dataclass
@@ -155,6 +156,9 @@ def _call_codex(prompt: str) -> tuple:
 # Sandboxed execution
 # ---------------------------------------------------------------------------
 
+_GEOMETRY_LOCK = threading.Lock()
+
+
 def _execute_code(code: str) -> tuple[Optional[object], Optional[str]]:
     """Execute generated code in a fresh namespace. Return (part, error)."""
     # Whitelist module lookup: we allow build123d and its submodules only.
@@ -184,7 +188,11 @@ def _execute_code(code: str) -> tuple[Optional[object], Optional[str]]:
     from .stdparts import SANDBOX_HELPERS
     ns.update(SANDBOX_HELPERS)
     try:
-        exec(code, ns, ns)
+        # The OCC kernel is not safe under Python-level concurrency
+        # (parallel part generation overlaps LLM calls, not geometry):
+        # serialize the geometry-building exec.
+        with _GEOMETRY_LOCK:
+            exec(code, ns, ns)
     except Exception:
         return None, traceback.format_exc(limit=3)
 

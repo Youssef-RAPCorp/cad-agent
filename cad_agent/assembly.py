@@ -536,7 +536,6 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
     mesh is watertight fall back to an exact OCC boolean.
     """
     import time
-    from concurrent.futures import ThreadPoolExecutor
 
     violations: List[str] = []
 
@@ -554,9 +553,17 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
             mounted_pairs.add(frozenset((inst.part, inst.mounts)))
 
     t0 = time.time()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        meshes = list(pool.map(_tessellate_for_check,
-                               [s for _, s in placed]))
+    # Serial: instances of the same part share underlying OCC geometry,
+    # and concurrent tessellation of shared shapes segfaults.
+    meshes = [_tessellate_for_check(s) for _, s in placed]
+    for m in meshes:
+        if m is not None and len(m.vertices):
+            # Prime lazily-computed caches now, single-threaded — later
+            # concurrent reads of trimesh cached properties are unsafe.
+            m.is_watertight
+            m.triangles_center
+            m.edges_unique
+            m.volume
     if verbose:
         print(f"[cad_agent.assembly] tessellated {len(meshes)} instances "
               f"in {time.time() - t0:.1f}s", file=sys.stderr)
@@ -659,11 +666,16 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
             return _fmt(la, lb, v ** (1.0 / 3.0))
         return None
 
-    if pairs:
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for msg in pool.map(_check_pair, pairs):
-                if msg:
-                    violations.append(msg)
+    # Serial: depth queries are milliseconds each, and trimesh/rtree
+    # index construction is not thread-safe on shared meshes.
+    t0 = time.time()
+    for pair in pairs:
+        msg = _check_pair(pair)
+        if msg:
+            violations.append(msg)
+    if verbose and pairs:
+        print(f"[cad_agent.assembly] pair checks took "
+              f"{time.time() - t0:.1f}s", file=sys.stderr)
     return violations
 
 
@@ -871,13 +883,14 @@ def assemble(
                             pass
                     return k, s, n
 
+            # Serial at the Python level (OCC shapes share geometry and
+            # crash under thread concurrency); OCCT parallelizes each
+            # boolean internally across cores.
             n_pockets = 0
-            if jobs:
-                with ThreadPoolExecutor(
-                        max_workers=min(8, len(jobs))) as pool:
-                    for k, solid, n in pool.map(_carve_one, jobs):
-                        placed[k][1] = solid
-                        n_pockets += n
+            for job in jobs:
+                k, solid, n = _carve_one(job)
+                placed[k][1] = solid
+                n_pockets += n
             _say(f"carved {n_pockets} clearance pockets into "
                  f"{len(carve_ids)} structural part(s) in "
                  f"{time.time() - t1:.0f}s ({len(jobs)} parallel jobs)")
