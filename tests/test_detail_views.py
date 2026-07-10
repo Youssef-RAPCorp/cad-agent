@@ -64,6 +64,30 @@ def test_region_with_no_content_warns(stl_path):
     assert any("region crop left no edges" in w for w in b.report.warnings)
 
 
+def test_labels_stay_inside_sheet_borders(stl_path):
+    """Regression: a label anchored near the right border used to be
+    placed past the sheet edge; border guard obstacles now keep all
+    placed text inside the drawing area."""
+    from cad_agent.drawings import Ref, Snap, TextLabel
+
+    spec = DrawingSpec(
+        sheet="A4", units=Units.MILLIMETERS, workflow="mech",
+        entities=[Mesh3DView(id="V", path=str(stl_path), view="front",
+                             origin=(265, 120), scale=1.0)],
+        annotations=[TextLabel(
+            id="T_EDGE", text="CLASSIC BASE MOLDING DETAIL",
+            target=Ref(entity_id="V", snap=Snap.VERTEX, index=1),
+            height=3.5)],
+    )
+    b = DrawingBuilder(spec)
+    b.build()
+    aabb = b.index.get("T_EDGE").aabb
+    assert aabb.xmax <= 287.01          # A4 right border: 297 - 10
+    assert aabb.xmin >= 19.99           # left border
+    assert b.index.has("__guard_right")
+    assert b.index.has("__guard_titleblock")
+
+
 def test_frame_draws_detail_circle(stl_path):
     b = _build(stl_path, region=(25, 6, 40, 16), scale=4.0, frame=True)
     circles = [e for e in b.msp if e.dxftype() == "CIRCLE"]

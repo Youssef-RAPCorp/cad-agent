@@ -83,12 +83,44 @@ class DrawingBuilder:
     # -- public --
 
     def build(self) -> Drawing:
+        # Sheet-coordinate specs (any spec embedding model views) get
+        # guard obstacles along the borders and over the title block so
+        # the placement engine can't put text outside the drawing area.
+        # Origin-coordinate 2D specs are viewport-autoscaled, so sheet
+        # guards don't apply there.
+        if any(isinstance(e, Mesh3DView) for e in self.spec.entities):
+            self._register_sheet_guards()
         for ent in self.spec.entities:
             self._draw_entity(ent)
         for ann in self.spec.annotations:
             self._draw_annotation(ann)
         self._setup_paperspace()
         return self.doc
+
+    def _register_sheet_guards(self) -> None:
+        """Invisible collision obstacles: the four margins outside the
+        border rectangle and the title-block band, in sheet mm."""
+        sheet = SHEETS[self.spec.sheet]
+        w, h = sheet.width_mm, sheet.height_mm
+        big = 500.0
+        x0, y0 = sheet.border_left, sheet.border_bottom
+        x1, y1 = w - sheet.border_right, h - sheet.border_top
+        tb_w, tb_h = 180.0, 60.0
+        zones = {
+            "__guard_left":   (x0 - big, -big, x0, h + big),
+            "__guard_right":  (x1, -big, x1 + big, h + big),
+            "__guard_bottom": (x0, y0 - big, x1, y0),
+            "__guard_top":    (x0, y1, x1, y1 + big),
+            "__guard_titleblock": (x1 - tb_w, y0, x1, y0 + tb_h),
+        }
+        for gid, (gx0, gy0, gx1, gy1) in zones.items():
+            # kind "guard" is unknown to the ink decomposer, so the
+            # whole AABB acts as solid ink — text can't land anywhere
+            # inside the zone, not just on its boundary.
+            ge = GeomEntity(entity_id=gid, kind="guard",
+                            points=[(gx0, gy0), (gx1, gy1)])
+            ge.aabb = AABB(gx0, gy0, gx1, gy1)
+            self.index.add(ge)
 
     def save(self, path: str) -> None:
         # ezdxf audit catches structural issues before write
