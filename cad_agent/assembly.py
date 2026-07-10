@@ -216,7 +216,13 @@ Rules:
    verification. Describe containers as hollow shells with wall
    thickness and openings anyway; carving is the safety net, not the
    design.
-7. Output ONLY the JSON object — no markdown fences, no commentary.
+7. LAYOUT PRE-FLIGHT: before any geometry is generated, every
+   non-carve instance is checked as a proxy box (gears: their exact tip
+   cylinder; LLM parts: their envelope). Two proxies may not overlap
+   unless they are a correctly meshed gear pair (center distance =
+   module*(z1+z2)/2) or coaxial stacked wheels — so compute positions
+   numerically, and size envelopes honestly.
+8. Output ONLY the JSON object — no markdown fences, no commentary.
 
 JSON schema:
 {schema}
@@ -230,6 +236,106 @@ Return the assembly plan JSON now."""
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
+
+def _rot_matrix(rx: float, ry: float, rz: float):
+    """Rotation matrix for XYZ Euler degrees (Rz @ Ry @ Rx)."""
+    import math as m
+    ax, ay, az = (m.radians(rx), m.radians(ry), m.radians(rz))
+    cx, sx = m.cos(ax), m.sin(ax)
+    cy, sy = m.cos(ay), m.sin(ay)
+    cz, sz = m.cos(az), m.sin(az)
+    return ((cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx),
+            (sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx),
+            (-sy, cy * sx, cy * cx))
+
+
+def _xform(pt, R, at):
+    return (R[0][0] * pt[0] + R[0][1] * pt[1] + R[0][2] * pt[2] + at[0],
+            R[1][0] * pt[0] + R[1][1] * pt[1] + R[1][2] * pt[2] + at[1],
+            R[2][0] * pt[0] + R[2][1] * pt[1] + R[2][2] * pt[2] + at[2])
+
+
+def _preflight(plan: AssemblyPlan) -> List[str]:
+    """Soft layout check BEFORE any geometry is generated.
+
+    Every non-carve instance is represented by a cheap proxy volume —
+    a gear's exact tip cylinder (analytic from module/teeth) or an LLM
+    part's declared envelope box — transformed by its placement. Two
+    proxies overlapping by more than 2mm is a layout violation, except
+    gear pairs that satisfy the meshing center-distance rule and
+    coaxial stacked wheels (their true fit is verified precisely after
+    generation). Count checks run here too. This costs microseconds,
+    so bad layouts are rejected for the price of a planner call instead
+    of a full generation round.
+    """
+    violations: List[str] = []
+    for chk in plan.checks:
+        n = sum(1 for inst in plan.instances
+                if fnmatch.fnmatch(inst.part, chk.pattern))
+        if not (chk.min <= n <= chk.max):
+            violations.append(
+                f"count check failed: {n} instances match "
+                f"'{chk.pattern}' (need {chk.min}..{chk.max})")
+
+    parts_by_id = {pt.id: pt for pt in plan.parts}
+    proxies = []
+    counters: Dict[str, int] = {}
+    for inst in plan.instances:
+        part = parts_by_id[inst.part]
+        counters[inst.part] = counters.get(inst.part, 0) + 1
+        label = f"{inst.part}#{counters[inst.part]}"
+        if part.carve:
+            continue                    # structure gets carved later
+        g = part.primitive
+        if g is not None:
+            r = g.module * (g.teeth + 2) / 2.0
+            box = (-r, -r, 0.0, r, r, g.thickness)
+            center_local = (0.0, 0.0, g.thickness / 2.0)
+        else:
+            ex, ey, ez = part.envelope
+            box = (-ex / 2, -ey / 2, 0.0, ex / 2, ey / 2, ez)
+            center_local = (0.0, 0.0, ez / 2.0)
+        R = _rot_matrix(*inst.rotate)
+        pts = [_xform((x, y, z), R, inst.at)
+               for x in (box[0], box[3])
+               for y in (box[1], box[4])
+               for z in (box[2], box[5])]
+        aabb = (min(p[0] for p in pts), min(p[1] for p in pts),
+                min(p[2] for p in pts), max(p[0] for p in pts),
+                max(p[1] for p in pts), max(p[2] for p in pts))
+        proxies.append((label, g, aabb, _xform(center_local, R, inst.at)))
+
+    contact = 2.0                       # ignore adjacency/stacking contact
+    for i in range(len(proxies)):
+        for j in range(i + 1, len(proxies)):
+            la, ga, a, ca = proxies[i]
+            lb, gb, b, cb = proxies[j]
+            if not (min(a[3], b[3]) - max(a[0], b[0]) > contact
+                    and min(a[4], b[4]) - max(a[1], b[1]) > contact
+                    and min(a[5], b[5]) - max(a[2], b[2]) > contact):
+                continue
+            if ga is not None and gb is not None:
+                d = ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2
+                     + (ca[2] - cb[2]) ** 2) ** 0.5
+                if d < 2.0:
+                    continue            # coaxial stacked wheels
+                if ga.module == gb.module:
+                    need = ga.module * (ga.teeth + gb.teeth) / 2.0
+                    if abs(d - need) <= 0.5:
+                        continue        # correctly meshed pair
+                    violations.append(
+                        f"gears {la} and {lb} overlap but are {d:.1f}mm "
+                        f"apart; meshing needs exactly {need:.1f}mm")
+                    continue
+                violations.append(
+                    f"gears {la} and {lb} overlap with different modules "
+                    f"({ga.module} vs {gb.module}) — they cannot mesh")
+                continue
+            violations.append(
+                f"layout overlap: {la} and {lb} envelope boxes "
+                f"interpenetrate — move them apart")
+    return violations
+
 
 def _call_planner(prompt: str):
     from ._vendored.cad_agent3 import gemini_codegen
@@ -404,10 +510,20 @@ def assemble(
         _say(f"plan '{plan.name}': {len(plan.parts)} parts, "
              f"{len(plan.instances)} instances")
 
+        # --- soft layout pre-flight (no geometry generated yet) --------
+        layout_violations = _preflight(plan)
+        if layout_violations:
+            last_error = ("layout pre-flight failed (checked with proxy "
+                          "envelope boxes before generating any geometry): "
+                          + "; ".join(layout_violations[:8]))
+            feedback = _revise(last_error)
+            continue
+        _say("layout pre-flight clean")
+
         # --- generate unique parts (parallel: independent LLM calls) --
         import time
         from concurrent.futures import ThreadPoolExecutor
-        workers = max(1, int(os.environ.get("CAD_AGENT_PARALLEL", "6")))
+        workers = max(1, int(os.environ.get("CAD_AGENT_PARALLEL", "20")))
         llm_parts = [pt for pt in plan.parts if pt.primitive is None]
         _say(f"generating {len(plan.parts)} unique parts "
              f"({len(llm_parts)} via LLM, {workers} parallel workers)")

@@ -105,13 +105,38 @@ def test_assemble_clean_first_round(tmp_path, mock_planner, mock_codegen):
     assert "2 x gear_z24" in result.summary()
 
 
-def test_interference_triggers_revision(tmp_path, mock_planner, mock_codegen):
+def test_bad_layout_fails_preflight_before_generation(tmp_path, mock_planner,
+                                                       monkeypatch):
+    """Wrongly spaced gears are rejected by the soft pre-flight — no
+    part generation happens for the bad plan."""
+    gen_calls = {"n": 0}
+    def counting(desc, extra_constraints="", **kw):
+        gen_calls["n"] += 1
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 2.5) * Box(60, 30, 5), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", counting)
     calls = mock_planner(OVERLAP_PLAN, GOOD_PLAN)
     result = assemble("gearbox", output_dir=tmp_path)
     assert result.success, result.error
     assert calls["n"] == 2
+    assert "pre-flight" in calls["prompts"][1]
+    assert "meshing needs exactly 24.0mm" in calls["prompts"][1]
+    # the bad round-1 plan cost zero codegen calls
+    assert gen_calls["n"] == 1          # only GOOD_PLAN's base_plate
+
+
+def test_unphased_gears_caught_by_precise_check(tmp_path, mock_planner,
+                                                mock_codegen):
+    """Correct center distance but no tooth phasing passes pre-flight
+    (the layout is right) and is caught by the boolean interference
+    check after generation."""
+    plan = json.loads(GOOD_PLAN)
+    plan["instances"][1]["rotate"] = [0, 0, 0]   # drop the 7.5deg phase
+    calls = mock_planner(json.dumps(plan), GOOD_PLAN)
+    result = assemble("gearbox", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 2
     assert "interference" in calls["prompts"][1]
-    assert any("interference" in r for r in result.report)
 
 
 def test_count_check_triggers_revision(tmp_path, mock_planner, mock_codegen):
@@ -140,8 +165,8 @@ def test_envelope_is_orientation_agnostic(tmp_path, mock_planner, monkeypatch):
         return types.SimpleNamespace(
             part=Pos(0, 0, 1.5) * Box(110, 140, 3), error=None, code="...")
     monkeypatch.setattr(backend, "generate_shape", flat_plate)
-    # keep the plate clear of the gears
-    plan["instances"][2]["at"] = [12, 0, -10]
+    # keep the plate's (tall) envelope proxy clear of the gears
+    plan["instances"][2]["at"] = [250, 0, 0]
     calls = mock_planner(json.dumps(plan))
     result = assemble("gearbox", output_dir=tmp_path)
     assert result.success, result.error
@@ -219,7 +244,9 @@ def test_carve_gives_contents_clearance(tmp_path, mock_planner, monkeypatch):
 
 def test_revision_feedback_includes_measured_sizes(tmp_path, mock_planner,
                                                    mock_codegen):
-    calls = mock_planner(OVERLAP_PLAN, GOOD_PLAN)
+    plan = json.loads(GOOD_PLAN)
+    plan["instances"][1]["rotate"] = [0, 0, 0]   # unphased: passes pre-flight,
+    calls = mock_planner(json.dumps(plan), GOOD_PLAN)  # fails precise check
     result = assemble("gearbox", output_dir=tmp_path)
     assert result.success
     assert "MEASURED PART SIZES" in calls["prompts"][1]
