@@ -72,7 +72,7 @@ from ._vendored.rapcad_drawings.standards import SHEETS
 
 __all__ = [
     # Sheet-from-model bridge + LLM-assisted generation
-    "draw_multiview", "generate_drawing", "SheetResult",
+    "draw_multiview", "generate_drawing", "draft_drawing", "SheetResult",
     # Top level
     "DrawingSpec", "DrawingBuilder", "BuildReport", "build_dxf",
     "render_preview", "validate", "Finding",
@@ -144,6 +144,41 @@ def _scale_label(s: float) -> str:
     return f"{s:g}:1" if s >= 1.0 else f"1:{1.0 / s:g}"
 
 
+def _resolve_model(source, name, output_dir):
+    """Resolve a CADResult or file path into (stl_path, name, outdir).
+
+    STEP files are tessellated through build123d (trimesh can't read
+    BREP); the intermediate STL is kept beside the outputs so specs
+    referencing it stay rebuildable.
+    """
+    if hasattr(source, "stl_path"):  # CADResult (duck-typed)
+        if not source.stl_path:
+            raise ValueError(
+                "CADResult has no STL artifact (was write_stl disabled, "
+                "or did generation fail?) — cannot derive drawing views"
+            )
+        stl_path = Path(source.stl_path)
+        if name is None:
+            name = source.metadata.get("name") or stl_path.stem
+        if output_dir is None:
+            output_dir = source.output_dir
+    else:
+        stl_path = Path(source)
+    if not stl_path.exists():
+        raise FileNotFoundError(f"mesh file not found: {stl_path}")
+    name = name or stl_path.stem
+    outdir = Path(output_dir) if output_dir else stl_path.parent
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    if stl_path.suffix.lower() in (".step", ".stp"):
+        from build123d import import_step, export_stl
+        shape = import_step(str(stl_path))
+        mesh_path = outdir / f"{name}_tessellated.stl"
+        export_stl(shape, str(mesh_path))
+        stl_path = mesh_path
+    return stl_path, name, outdir
+
+
 def _pick_scale(fit: float) -> float:
     candidates = [s for s in _STANDARD_SCALES if s <= fit]
     return candidates[-1] if candidates else fit
@@ -203,38 +238,10 @@ def draw_multiview(
         DrawingSpec; edit `spec.annotations` and rebuild with
         DrawingBuilder for dimensioned sheets.
     """
-    # --- Resolve the mesh source ------------------------------------
-    stl_path: Optional[Path] = None
-    if hasattr(source, "stl_path"):  # CADResult (duck-typed)
-        if not source.stl_path:
-            raise ValueError(
-                "CADResult has no STL artifact (was write_stl disabled, "
-                "or did generation fail?) — cannot derive drawing views"
-            )
-        stl_path = Path(source.stl_path)
-        if name is None:
-            name = source.metadata.get("name") or stl_path.stem
-        if output_dir is None:
-            output_dir = source.output_dir
-    else:
-        stl_path = Path(source)
-    if not stl_path.exists():
-        raise FileNotFoundError(f"mesh file not found: {stl_path}")
-    name = name or stl_path.stem
-    outdir = Path(output_dir) if output_dir else stl_path.parent
-    outdir.mkdir(parents=True, exist_ok=True)
+    stl_path, name, outdir = _resolve_model(source, name, output_dir)
 
     if sheet is not None and sheet not in SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
-
-    # STEP is BREP — trimesh can't read it. Tessellate via build123d and
-    # keep the STL beside the outputs so the spec stays rebuildable.
-    if stl_path.suffix.lower() in (".step", ".stp"):
-        from build123d import import_step, export_stl
-        shape = import_step(str(stl_path))
-        mesh_path = outdir / f"{name}_tessellated.stl"
-        export_stl(shape, str(mesh_path))
-        stl_path = mesh_path
 
     # --- Project the three orthographic views to size the layout ----
     # (model3d lazily imports trimesh and raises a helpful error if
@@ -575,3 +582,305 @@ def generate_drawing(
     raise RuntimeError(
         f"no valid drawing after {max_revisions} attempts; last: {last_error}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Smart LLM drafting — the model studies the actual 3D shape
+# ---------------------------------------------------------------------------
+#
+# Unlike generate_drawing (text description -> 2D geometry drawn from
+# scratch), draft_drawing hands the LLM the REAL model: measured facts,
+# classified view images (visible vs hidden ink), and the Mesh3DView
+# mechanism so the returned DrawingSpec embeds true projections of the
+# 3D shape with dimensions and callouts attached to them.
+
+_SMART_PROMPT = """You are an expert mechanical drafter. You are given a real \
+3D CAD model: measured facts below{image_note}. Produce a DrawingSpec JSON for \
+a complete engineering drawing of THIS model.
+
+How to embed the real shape: use `mesh3d_view` entities with `"path": "MODEL"` \
+(the engine substitutes the actual file). Each mesh3d_view draws the true \
+projected geometry of the model:
+- `view`: one of front/top/bottom/right/left/back/iso
+- `origin`: the CENTER of the view on the sheet, in sheet mm
+- `scale`: drawing scale (view size on sheet = model size x scale)
+- `show_hidden`: true to draw occluded edges dashed (use on orthographic
+  views; leave false on iso)
+- `label`: e.g. "FRONT VIEW"
+Each mesh3d_view also registers a rectangle named by its `id` whose corners
+are vertices 0=lower-left, 1=lower-right, 2=upper-right, 3=upper-left — attach
+dimensions to them with Ref targets, e.g.
+  {{"kind": "linear_dim", "id": "D_W",
+    "p1": {{"entity_id": "V_FRONT", "snap": "vertex", "index": 0}},
+    "p2": {{"entity_id": "V_FRONT", "snap": "vertex", "index": 1}},
+    "side": "below", "text_override": "<true mm size>"}}
+IMPORTANT: views are drawn scaled, so every dimension on a mesh3d_view MUST
+set text_override to the true model size in mm (given in the facts).
+
+Design the sheet like a drafter:
+1. Choose the views this shape needs (tall parts: front+right+top; flat
+   parts: top+front; always consider one iso at ~0.7x scale in a corner).
+2. Use the suggested sheet/scale/layout from the facts unless you have a
+   reason to deviate. Keep all content inside the border (left 20mm,
+   right 10mm, top 10mm) and above the 70mm title-block band at the bottom.
+3. Dimension the part fully: overall sizes on the views, plus feature
+   callouts (`kind`: "text" with a Ref target on a view id and a leader,
+   e.g. "Ø6.4 THRU 2X") for holes/bosses you can identify in the images.
+4. Fill the title block (title, drawing_no, rev, scale, notes).
+5. Output ONLY one JSON object valid against the schema — no markdown
+   fences, no commentary.
+
+JSON schema for DrawingSpec:
+{schema}
+
+MODEL FACTS
+{facts}
+{notes}{feedback}
+Return the DrawingSpec JSON now."""
+
+
+def _render_view_images(mesh, outdir, name, dpi=100):
+    """Render classified per-view PNGs (visible black, hidden gray) for
+    the multimodal prompt. Returns list of (view_name, path)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from ._vendored.rapcad_drawings.model3d import project_mesh
+
+    images = []
+    for view in ("front", "top", "right", "iso"):
+        pv = project_mesh(mesh, view=view)
+        if not pv.edges_2d:
+            continue
+        fig, ax = plt.subplots(figsize=(5, 5))
+        for a, b in pv.hidden_edges_2d:
+            ax.plot([a[0], b[0]], [a[1], b[1]], color="0.7", lw=0.6)
+        for a, b in pv.edges_2d:
+            ax.plot([a[0], b[0]], [a[1], b[1]], color="k", lw=1.0)
+        ax.set_aspect("equal")
+        ax.set_title(f"{view.upper()} (gray = hidden)", fontsize=9)
+        path = outdir / f"{name}_llmview_{view}.png"
+        fig.savefig(str(path), dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        images.append((view, path))
+    return images
+
+
+def _call_llm_for_spec(prompt: str, image_paths=(), verbose: bool = False):
+    """LLM call for spec drafting. Multimodal Gemini when images are
+    given and the SDK/key allow; otherwise the text-only vendored call.
+    Returns (text, error)."""
+    import os
+    import sys
+
+    from ._vendored.cad_agent3 import gemini_codegen
+
+    backend = (os.environ.get("LLM_BACKEND")
+               or os.environ.get("CAD_AGENT_BACKEND", "gemini")).lower()
+    if image_paths and backend != "anthropic":
+        try:
+            from google import genai
+            from google.genai import types
+            api_key = (os.environ.get("GEMINI_API_KEY")
+                       or os.environ.get("GOOGLE_API_KEY"))
+            if api_key:
+                client = genai.Client(api_key=api_key)
+                model = os.environ.get("GEMINI_CODEGEN_MODEL",
+                                       "gemini-flash-latest")
+                parts = [types.Part.from_bytes(
+                            data=Path(p).read_bytes(), mime_type="image/png")
+                         for _, p in image_paths]
+                resp = client.models.generate_content(
+                    model=model, contents=parts + [prompt])
+                text = gemini_codegen._strip_fences(
+                    getattr(resp, "text", "") or "")
+                if text:
+                    return text, None
+        except Exception as exc:
+            if verbose:
+                print(f"[cad_agent.drawings] multimodal call failed "
+                      f"({exc}); falling back to text-only", file=sys.stderr)
+    return gemini_codegen.call_gemini_for_code(prompt)
+
+
+def draft_drawing(
+    source,
+    *,
+    notes: str = "",
+    name: Optional[str] = None,
+    output_dir: Optional[Union[str, Path]] = None,
+    sheet: Optional[str] = None,
+    max_revisions: int = 3,
+    preview: bool = True,
+    dpi: int = 180,
+    verbose: bool = False,
+) -> SheetResult:
+    """LLM-drafted engineering drawing of a real 3D model.
+
+    The LLM studies the shape — measured dimensions, per-view sizes, and
+    rendered images of the hidden-line-classified views — and composes
+    the whole DrawingSpec itself: which views to show, where to place
+    them, what to dimension, feature callouts, notes, and title block.
+    The real model geometry is embedded via Mesh3DView entities, so the
+    sheet shows true projections, not an LLM redrawing.
+
+    Args:
+        source: a CADResult (its STL is used) or a mesh/STEP file path.
+        notes: extra guidance woven into the prompt, e.g. "material is
+            6061; add a section note; imperial title block".
+        name/output_dir/sheet/preview/dpi: as draw_multiview.
+        max_revisions: LLM retry budget on invalid/colliding output.
+        verbose: print per-attempt progress to stderr.
+
+    Returns:
+        SheetResult. Raises RuntimeError if no valid drawing emerges
+        within max_revisions attempts.
+    """
+    import json
+    import os
+    import re
+    import sys
+
+    from pydantic import ValidationError
+
+    from ._vendored.rapcad_drawings.model3d import load_mesh, project_mesh
+
+    if (os.environ.get("CAD_AGENT_BACKEND", "").lower() == "anthropic"):
+        os.environ.setdefault("LLM_BACKEND", "anthropic")
+
+    stl_path, name, outdir = _resolve_model(source, name, output_dir)
+    if sheet is not None and sheet not in SHEETS:
+        raise ValueError(f"unknown sheet {sheet!r}; choose one of {sorted(SHEETS)}")
+
+    # --- Study the shape ----------------------------------------------
+    mesh = load_mesh(str(stl_path))
+    views = {v: project_mesh(mesh, view=v, source_path=str(stl_path))
+             for v in ("front", "top", "right", "iso")}
+    if not views["front"].edges_2d:
+        raise ValueError(f"no projectable edges found in {stl_path}")
+
+    # Reuse the deterministic layout as the LLM's starting suggestion
+    # (throwaway artifacts; cleaned up below).
+    template = draw_multiview(stl_path, name=f"{name}__layout",
+                              output_dir=outdir, sheet=sheet, preview=False)
+    try:
+        (outdir / f"{name}__layout_sheet.dxf").unlink()
+    except OSError:
+        pass
+    tmpl_views = {e.view: e for e in template.spec.entities}
+    sug_sheet = template.sheet
+    sug_scale = template.scale
+    layout_lines = "\n".join(
+        f"  - {v}: origin ({e.origin[0]:.0f}, {e.origin[1]:.0f}), "
+        f"scale {e.scale:g}"
+        for v, e in tmpl_views.items())
+
+    f, t, r = views["front"], views["top"], views["right"]
+    facts = (
+        f"- overall size, mm: width {f.width:.1f} (X), "
+        f"depth {t.height:.1f} (Y), height {f.height:.1f} (Z)\n"
+        f"- view sizes, model mm: front {f.width:.1f} x {f.height:.1f}, "
+        f"top {t.width:.1f} x {t.height:.1f}, "
+        f"right {r.width:.1f} x {r.height:.1f}\n"
+        f"- mesh: {len(mesh.faces)} triangles, "
+        f"{mesh.body_count} bodies\n"
+        f"- suggested sheet: {sug_sheet} "
+        f"({SHEETS[sug_sheet].width_mm:.0f} x "
+        f"{SHEETS[sug_sheet].height_mm:.0f} mm), scale {sug_scale:g}\n"
+        f"- suggested view layout (origins are view centers):\n"
+        f"{layout_lines}\n"
+        f"- sheets available: A4/A3/A2/A1/A0 landscape, A4P-A0P portrait, "
+        f"ANSI_A-ANSI_E"
+    )
+
+    images = _render_view_images(mesh, outdir, name)
+    image_note = (" and rendered images of its views (attached; gray "
+                  "lines are hidden/occluded edges)") if images else ""
+
+    schema_json = json.dumps(DrawingSpec.model_json_schema(),
+                             separators=(",", ":"))
+    notes_txt = f"\nEXTRA GUIDANCE FROM THE USER:\n{notes}\n" if notes else ""
+    feedback = ""
+    last_error = "no attempts made"
+
+    try:
+        for attempt in range(1, max_revisions + 1):
+            if verbose:
+                print(f"[cad_agent.drawings] smart draft attempt "
+                      f"{attempt}/{max_revisions}", file=sys.stderr)
+            prompt = _SMART_PROMPT.format(
+                schema=schema_json, facts=facts, notes=notes_txt,
+                image_note=image_note, feedback=feedback)
+            raw, err = _call_llm_for_spec(prompt, images, verbose=verbose)
+            if raw is None:
+                raise RuntimeError(f"LLM call failed: {err}")
+
+            def _revise(problem: str) -> str:
+                if verbose:
+                    print(f"[cad_agent.drawings]   revising: "
+                          f"{problem[:200]}", file=sys.stderr)
+                return (f"\nYOUR PREVIOUS ATTEMPT FAILED:\n{problem[:2000]}"
+                        f"\n\nPrevious JSON (truncated):\n{raw[:2000]}\n\n"
+                        f"Fix these problems and output the corrected "
+                        f"JSON.\n")
+
+            try:
+                spec = DrawingSpec.model_validate_json(raw)
+            except ValidationError as e:
+                last_error = f"schema validation failed: {e}"
+                feedback = _revise(last_error)
+                continue
+            if sheet is not None:
+                spec.sheet = sheet
+
+            # The LLM references the model as "MODEL"; substitute the
+            # real path (and repair any other path it invented).
+            n_views = 0
+            for ent in spec.entities:
+                if isinstance(ent, Mesh3DView):
+                    ent.path = str(stl_path)
+                    n_views += 1
+            if n_views == 0:
+                last_error = ("the spec embeds no mesh3d_view of the "
+                              "model; include the real views")
+                feedback = _revise(last_error)
+                continue
+
+            try:
+                builder = DrawingBuilder(spec)
+                doc = builder.build()
+            except Exception as e:
+                last_error = f"build failed: {type(e).__name__}: {e}"
+                feedback = _revise(last_error)
+                continue
+
+            findings = validate(builder.index, builder._halo)
+            errors = [x for x in findings if x.severity == "error"]
+            if errors:
+                last_error = "validator errors: " + "; ".join(
+                    f"{x.entity_id}: {x.message}" for x in errors[:5])
+                feedback = _revise(last_error)
+                continue
+
+            dxf_path = outdir / f"{name}_sheet.dxf"
+            builder.save(str(dxf_path))
+            png_path: Optional[Path] = None
+            if preview:
+                png_path = outdir / f"{name}_sheet.png"
+                render_preview(doc, str(png_path), layout="paperspace",
+                               dpi=dpi)
+            return SheetResult(
+                name=name, sheet=spec.sheet, scale=None,
+                dxf_path=dxf_path, png_path=png_path, spec=spec,
+                report=builder.report, findings=findings,
+            )
+        raise RuntimeError(
+            f"no valid drawing after {max_revisions} attempts; "
+            f"last: {last_error}")
+    finally:
+        for _, p in images:
+            try:
+                p.unlink()
+            except OSError:
+                pass

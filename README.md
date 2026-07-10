@@ -188,7 +188,17 @@ print(sheet.summary())
 #   preview: cad_output/part_4f8e2c19_sheet.png
 ```
 
-**LLM-assisted drafting** goes the other way — describe the part and the LLM emits the full dimensioned `DrawingSpec` (geometry, dims, hole callouts, title block), which is Pydantic-validated, built, and collision-checked, with errors fed back to the model for revision (needs an API key, like `generate()`):
+**Smart drafting** hands the whole sheet design to the LLM, grounded in the *real* model: it receives the measured specs (overall sizes, per-view extents) plus rendered images of the hidden-line-classified views, and composes the `DrawingSpec` itself — which views to show, where to place them, what to dimension, feature callouts, notes, title block — embedding true projections of the 3D shape via `Mesh3DView` entities. Validation, build, and collision errors are fed back for revision:
+
+```python
+from cad_agent.drawings import draft_drawing
+
+sheet = draft_drawing("cad_output/clock.stl",
+                      notes="material is oak; callout the pendulum")
+print(sheet.summary())
+```
+
+**LLM-assisted drafting from text** goes the other way — describe a part and the LLM emits the full dimensioned `DrawingSpec` (geometry, dims, hole callouts, title block), Pydantic-validated, built, and collision-checked, with errors fed back for revision (needs an API key, like `generate()`):
 
 ```python
 from cad_agent.drawings import generate_drawing
@@ -200,13 +210,17 @@ sheet = generate_drawing(
 print(sheet.summary())
 ```
 
-Both are also available from the terminal:
+All of it is available from the terminal:
 
 ```bash
-cad-agent-draw cad_output/part.stl                        # multi-view from a model (offline)
-cad-agent-draw "spacer plate 80x40mm with two M3 holes"   # LLM-drafted, dimensioned
+cad-agent-draw cad_output/part.stl                        # smart LLM draft (default with an API key)
+cad-agent-draw cad_output/part.step --notes "6061-T6"     # STEP works too; guide the drafter
+cad-agent-draw cad_output/part.stl --basic                # offline multi-view template (no LLM)
+cad-agent-draw "spacer plate 80x40mm with two M3 holes"   # LLM-drafted from a description
 cad-agent "M6 hex nut, 5mm thick" --draw                  # generate 3D model + sheet in one go
 ```
+
+Model files use the smart LLM draft when an API key is in the environment and fall back to the offline template otherwise (`--smart` / `--basic` force either).
 
 For full manual control, build a `DrawingSpec` declaratively — every entity and annotation is a validated Pydantic model:
 
