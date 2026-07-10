@@ -135,8 +135,9 @@ _STANDARD_SCALES = (0.02, 0.05, 0.1, 0.2, 0.25, 0.5,
 # revision block (the title block itself is 180 x 60 mm, bottom-right).
 _TITLE_BLOCK_RESERVE = 70.0
 
-# Candidate sheets for auto-selection (smallest first for tie-breaking).
-_AUTO_SHEETS = ("A4", "A3", "A2", "A1", "A0")
+# Candidate sheets for auto-selection, both orientations.
+_AUTO_SHEETS = ("A4", "A4P", "A3", "A3P", "A2", "A2P",
+                "A1", "A1P", "A0", "A0P")
 
 
 def _scale_label(s: float) -> str:
@@ -254,11 +255,21 @@ def draw_multiview(
         return _pick_scale(min(fw_fit, fh_fit) * 0.85)
 
     if sheet is None:
-        # Prefer the sheet whose standard scale is closest to true size
-        # (1:1); ties go to the smaller sheet.
+        # Pick the sheet (either orientation) the drawing fills best at
+        # its standard scale — the weaker of the two axes decides, so a
+        # tall part lands on portrait and a flat one on landscape. Ties
+        # go to the smaller sheet, then to the scale nearest 1:1.
+        def _fill(cand) -> float:
+            s = scale or _fit_scale(cand)
+            w_need = s * (front.width + right.width + 0.7 * iso.width) + 2 * spacing
+            h_need = s * (front.height + top.height) + spacing
+            return min(w_need / cand.inside_width,
+                       h_need / (cand.inside_height - _TITLE_BLOCK_RESERVE))
+
         sheet = min(_AUTO_SHEETS,
-                    key=lambda s: (abs(math.log(_fit_scale(SHEETS[s]))),
-                                   SHEETS[s].width_mm))
+                    key=lambda nm: (-_fill(SHEETS[nm]),
+                                    SHEETS[nm].width_mm * SHEETS[nm].height_mm,
+                                    abs(math.log(scale or _fit_scale(SHEETS[nm])))))
     sh = SHEETS[sheet]
     usable_w = sh.inside_width
     usable_h = sh.inside_height - _TITLE_BLOCK_RESERVE

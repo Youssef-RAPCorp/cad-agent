@@ -257,6 +257,7 @@ class DrawingSpec(BaseModel):
 
     sheet:       Literal[
         "A4", "A3", "A2", "A1", "A0",
+        "A4P", "A3P", "A2P", "A1P", "A0P",   # portrait
         "ANSI_A", "ANSI_B", "ANSI_C", "ANSI_D", "ANSI_E"
     ] = "A3"
     units:       Units = Units.MILLIMETERS

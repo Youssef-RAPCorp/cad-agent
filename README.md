@@ -239,7 +239,7 @@ builder.save("widget.dxf")
 render_preview(doc, "widget_sheet.png", layout="paperspace")
 ```
 
-Sheets cover ISO A0–A4 and ASME ANSI_A–E; dimstyles follow ASME Y14.5 conventions (mech / arch / struct, mm and inch). A post-build `validate()` pass flags any residual annotation overlaps. End-to-end examples live in `tests/test_drawings_*.py`.
+Sheets cover ISO A0–A4 (landscape and portrait — `A3P`, `A2P`, …) and ASME ANSI_A–E; dimstyles follow ASME Y14.5 conventions (mech / arch / struct, mm and inch). Multi-view sheets auto-pick the sheet and orientation that the drawing fills best, and carry overall dimensions (true model mm) by default. A post-build `validate()` pass flags any residual annotation overlaps. End-to-end examples live in `tests/test_drawings_*.py`.
 
 ---
 

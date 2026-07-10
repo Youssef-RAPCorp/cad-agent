@@ -98,6 +98,13 @@ SHEETS: Dict[str, SheetSize] = {
     "A2": SheetSize("A2", 594.0,  420.0,  20, 10, 10, 10),
     "A1": SheetSize("A1", 841.0,  594.0,  20, 10, 10, 10),
     "A0": SheetSize("A0", 1189.0, 841.0,  20, 10, 10, 10),
+    # ISO portrait -- tall parts. Note A4P's usable width is exactly the
+    # 180mm title block.
+    "A4P": SheetSize("A4P", 210.0, 297.0,  20, 10, 10, 10),
+    "A3P": SheetSize("A3P", 297.0, 420.0,  20, 10, 10, 10),
+    "A2P": SheetSize("A2P", 420.0, 594.0,  20, 10, 10, 10),
+    "A1P": SheetSize("A1P", 594.0, 841.0,  20, 10, 10, 10),
+    "A0P": SheetSize("A0P", 841.0, 1189.0, 20, 10, 10, 10),
     # ASME Y14.1 (inch sizes expressed in mm)
     "ANSI_A": SheetSize("ANSI_A", 279.4,  215.9, 12.7,  6.35, 6.35, 6.35),
     "ANSI_B": SheetSize("ANSI_B", 431.8,  279.4, 12.7,  6.35, 6.35, 6.35),

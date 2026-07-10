@@ -60,6 +60,18 @@ def test_draw_multiview_no_dimensions(stl_path):
     assert sheet.spec.annotations == []
 
 
+def test_draw_multiview_tall_part_gets_portrait_sheet(tmp_path):
+    """A grandfather-clock-shaped part (tall and narrow) should land on
+    a portrait sheet at 1:1 instead of huddling on landscape A2."""
+    tall = trimesh.creation.box(extents=(40, 25, 220))
+    path = tmp_path / "clockish.stl"
+    tall.export(str(path))
+    sheet = draw_multiview(path, preview=False)
+    assert sheet.sheet.endswith("P")
+    assert sheet.scale == 1.0
+    assert not [f for f in sheet.findings if f.severity == "error"]
+
+
 def test_draw_multiview_auto_sheet_prefers_near_true_size(stl_path):
     """A 40mm part should land on a small sheet at a modest enlargement,
     not float tiny in a corner of A2. Larger sheets would push the scale
