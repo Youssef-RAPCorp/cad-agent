@@ -293,6 +293,68 @@ def test_revision_feedback_includes_measured_sizes(tmp_path, mock_planner,
     assert "MEASURED PART SIZES" in calls["prompts"][1]
 
 
+def test_structure_carves_into_structure(tmp_path, mock_planner, monkeypatch):
+    """Two carve-marked structural parts overlapping (seat board inside
+    the case): the smaller carves a pocket into the larger instead of
+    failing verification."""
+    plan = {
+        "name": "board in case",
+        "parts": [
+            {"id": "case", "description": "solid case block 100x100x100",
+             "envelope": [100, 100, 100], "carve": True},
+            {"id": "board", "description": "board 60x20x10",
+             "envelope": [60, 20, 10], "carve": True},
+        ],
+        "instances": [
+            {"part": "case", "at": [0, 0, 0]},
+            {"part": "board", "at": [0, 0, 45]},   # buried mid-case
+        ],
+    }
+    def by_desc(desc, extra_constraints="", **kw):
+        if "case" in desc:
+            solid = Pos(0, 0, 50) * Box(100, 100, 100)
+        else:
+            solid = Pos(0, 0, 5) * Box(60, 20, 10)
+        return types.SimpleNamespace(part=solid, error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", by_desc)
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("board in case", output_dir=tmp_path)
+    assert result.success, result.error
+    assert calls["n"] == 1
+    # case lost the board's volume
+    assert result.volume_mm3 == pytest.approx(100**3, rel=0.01)
+
+
+def test_mounted_interference_message_hints_bore(tmp_path, mock_planner,
+                                                 monkeypatch):
+    """A gear whose bore is too small for its arbor fails precisely, and
+    the feedback names the fix."""
+    plan = {
+        "name": "tight bore",
+        "parts": [
+            {"id": "arbor", "description": "rod 3.6mm dia x 40mm",
+             "envelope": [4, 4, 40]},
+            {"id": "gear_z24", "primitive": {"kind": "involute_gear",
+                                             "module": 1.0, "teeth": 24,
+                                             "thickness": 4.0, "bore": 1.0}},
+        ],
+        "instances": [
+            {"part": "arbor", "at": [0, 0, -18]},
+            {"part": "gear_z24", "at": [0, 0, 0], "mounts": "arbor"},
+        ],
+    }
+    from build123d import Cylinder
+    def rod(desc, extra_constraints="", **kw):
+        return types.SimpleNamespace(
+            part=Pos(0, 0, 20) * Cylinder(1.8, 40), error=None, code="...")
+    monkeypatch.setattr(backend, "generate_shape", rod)
+    calls = mock_planner(json.dumps(plan))
+    result = assemble("tight bore", output_dir=tmp_path, max_revisions=1)
+    assert not result.success
+    assert "mounted pair" in result.error
+    assert "bore" in result.error
+
+
 def test_plan_schema_rejects_bad_references():
     with pytest.raises(Exception):
         AssemblyPlan.model_validate_json(json.dumps({

@@ -195,7 +195,9 @@ Rules:
    compute instance positions from that rule. Phase meshing pairs by
    rotating one gear (rotate[2] = 180/teeth degrees is the usual
    correction). Gear primitives are modeled axis +Z, z=0..thickness,
-   centered in XY; use `rotate` to orient them.
+   centered in XY; use `rotate` to orient them. A gear mounted on an
+   arbor MUST set "bore" >= the arbor diameter + 0.4mm, or the shaft
+   will interfere with the gear and fail verification.
 2. LLM PARTS: everything else gets a `description` — self-contained,
    fully dimensioned in mm, written like a spec for a machinist ("a
    rectangular seat board 200x180x20mm with two 10mm notches...") — and
@@ -437,6 +439,11 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
         boxes.append((label, solid,
                       (bb.min.X, bb.min.Y, bb.min.Z,
                        bb.max.X, bb.max.Y, bb.max.Z)))
+    mounted_pairs = set()
+    for inst in plan.instances:
+        if inst.mounts:
+            mounted_pairs.add(frozenset((inst.part, inst.mounts)))
+
     margin = 0.2  # ignore mere surface contact
     pairs = []
     for i in range(len(boxes)):
@@ -463,8 +470,13 @@ def _verify_assembly(plan: AssemblyPlan, placed, max_pairs: int = 400,
         except Exception:
             v = 0.0
         if v > tol_mm3:
+            pa = la.rsplit("#", 1)[0]
+            pb = lb.rsplit("#", 1)[0]
+            hint = (" (mounted pair: enlarge the mounted part's bore/"
+                    "clearance beyond its shaft diameter)"
+                    if frozenset((pa, pb)) in mounted_pairs else "")
             violations.append(
-                f"interference: {la} and {lb} overlap by {v:.1f} mm³")
+                f"interference: {la} and {lb} overlap by {v:.1f} mm³{hint}")
     return violations
 
 
@@ -612,26 +624,65 @@ def assemble(
             placed.append([label, _place(solids[inst.part], inst),
                            inst.part in carve_ids])
 
-        # --- carve container clearances --------------------------------
+        # --- carve structural clearances --------------------------------
+        # AABB-prefiltered and batched: each structural part subtracts
+        # ONE compound of everything that actually overlaps it (a full
+        # boolean per non-overlapping pair was the hidden time sink).
+        # Among two structural parts the smaller wins the pocket (a seat
+        # board carves into the case, not vice versa).
         if carve_ids:
-            n_carved = 0
-            for entry in placed:
-                if not entry[2]:
+            t1 = time.time()
+
+            def _bb(s):
+                b = s.bounding_box()
+                return (b.min.X, b.min.Y, b.min.Z, b.max.X, b.max.Y, b.max.Z)
+
+            def _ov(a, b):
+                return (min(a[3], b[3]) - max(a[0], b[0]) > 0.01
+                        and min(a[4], b[4]) - max(a[1], b[1]) > 0.01
+                        and min(a[5], b[5]) - max(a[2], b[2]) > 0.01)
+
+            def _vol(bb):
+                return ((bb[3] - bb[0]) * (bb[4] - bb[1])
+                        * (bb[5] - bb[2]))
+
+            bbs = [_bb(e[1]) for e in placed]
+            order = sorted(range(len(placed)), key=lambda k: -_vol(bbs[k]))
+            n_pockets = 0
+            from build123d import Compound as _Compound
+            for k in order:
+                if not placed[k][2]:
                     continue
-                for other in placed:
-                    if other is entry or other[2]:
+                tools = []
+                for m2 in range(len(placed)):
+                    if m2 == k:
                         continue
-                    try:
-                        entry[1] = entry[1] - other[1]
-                        n_carved += 1
-                    except Exception:
-                        pass
-            _say(f"carved clearance for {n_carved} content instances "
-                 f"out of {len(carve_ids)} container part(s)")
+                    if placed[m2][2] and _vol(bbs[m2]) >= _vol(bbs[k]):
+                        continue        # only smaller structure carves in
+                    if _ov(bbs[k], bbs[m2]):
+                        tools.append(placed[m2][1])
+                if not tools:
+                    continue
+                try:
+                    placed[k][1] = placed[k][1] - _Compound(tools)
+                    n_pockets += len(tools)
+                except Exception:
+                    for tool in tools:
+                        try:
+                            placed[k][1] = placed[k][1] - tool
+                            n_pockets += 1
+                        except Exception:
+                            pass
+                bbs[k] = _bb(placed[k][1])
+            _say(f"carved {n_pockets} clearance pockets into "
+                 f"{len(carve_ids)} structural part(s) in "
+                 f"{time.time() - t1:.0f}s")
         placed = [(label, solid) for label, solid, _ in placed]
 
         # --- verify precisely -------------------------------------------
+        t1 = time.time()
         violations = _verify_assembly(plan, placed, verbose=verbose)
+        _say(f"precise verification took {time.time() - t1:.0f}s")
         if violations:
             last_error = ("assembly verification failed: "
                           + "; ".join(violations[:6])
